@@ -55,16 +55,21 @@ def _source_time(repository: Path, revision: str) -> str:
     return parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _controlled_standard_version(repository: Path, revision: str) -> str:
+def _controlled_release_config(repository: Path, revision: str) -> tuple[str, str]:
     raw = _git(repository, "show", f"{revision}:.github/repository-health.toml")
     try:
         config = tomllib.loads(raw.decode("utf-8"))
         version = config["standard"]["version"]
+        correspondence = config["repository"]["production_correspondence"]
     except (KeyError, TypeError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
-        raise ValueError("Tagged repository configuration has no valid controlled standard version") from error
+        raise ValueError("Tagged repository configuration has no valid controlled release contract") from error
     if not isinstance(version, str) or not version:
         raise ValueError("Tagged repository configuration has no valid controlled standard version")
-    return version
+    if correspondence not in {"Exact-Main", "Releasable-Main", "Production-Ref", "Per-unit combination"}:
+        raise ValueError(
+            "Tagged repository configuration must declare a non-Unknown production correspondence before release"
+        )
+    return version, correspondence
 
 
 def _tracked_blobs(repository: Path, revision: str) -> list[dict[str, Any]]:
@@ -178,11 +183,6 @@ def build_release(
         raise ValueError(f"Repository is not a Git working tree: {repo}")
     if not TAG_PATTERN.fullmatch(tag):
         raise ValueError(f"Release tag does not match the immutable version format: {tag}")
-    controlled_version = _controlled_standard_version(repo, revision)
-    if tag.removeprefix("v") != controlled_version:
-        raise ValueError(
-            f"Release tag version {tag.removeprefix('v')} does not match controlled standard version {controlled_version}"
-        )
     resolved_revision = _git(repo, "rev-parse", "--verify", f"{revision}^{{commit}}").decode("ascii").strip()
     if not SHA_PATTERN.fullmatch(resolved_revision):
         raise ValueError(f"Git did not resolve an exact commit SHA: {resolved_revision}")
@@ -195,6 +195,11 @@ def build_release(
     if tag_revision != resolved_revision:
         raise ValueError(
             f"Release tag {tag} resolves to {tag_revision}, not release revision {resolved_revision}"
+        )
+    controlled_version, production_correspondence = _controlled_release_config(repo, resolved_revision)
+    if tag.removeprefix("v") != controlled_version:
+        raise ValueError(
+            f"Release tag version {tag.removeprefix('v')} does not match controlled standard version {controlled_version}"
         )
 
     source_time = _source_time(repo, resolved_revision)
@@ -256,7 +261,7 @@ def build_release(
         },
         "file_count": len(files),
         "package_name": PACKAGE_NAME,
-        "production_correspondence": "Releasable-Main",
+        "production_correspondence": production_correspondence,
         "schema_version": "RH-RELEASE-IDENTITY-1.0",
         "source_commit_time": source_time,
         "source_ref": f"refs/tags/{tag}",

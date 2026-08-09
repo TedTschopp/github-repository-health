@@ -150,7 +150,7 @@ The revision-bound release builder emits `RH-RELEASE-IDENTITY-1.0` alongside the
 | `source_sha` | Yes | Exact 40-character source commit reachable from Main. |
 | `source_commit_time` | Yes | Source commit time used for reproducible metadata. |
 | `standard_version` | Yes | Controlled version read from the exact tagged `.github/repository-health.toml`. |
-| `production_correspondence` | Yes | Declared correspondence contract; initially `Releasable-Main`. |
+| `production_correspondence` | Yes | Non-Unknown correspondence contract read from the exact tagged repository configuration. |
 | `file_count` | Yes | Complete tracked-file population at `source_sha`. |
 | `artifacts` | Yes | Source archive and SBOM names, roles, media types, and SHA-256 digests. |
 | `builder` | Yes | Builder version, archive format, and exact Git and Python toolchain observed for repeatability analysis. |

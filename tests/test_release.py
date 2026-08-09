@@ -139,6 +139,49 @@ class ReleaseBuilderTests(unittest.TestCase):
                     output_directory=directory,
                 )
 
+    def test_release_requires_correspondence_in_the_tagged_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as checkout, tempfile.TemporaryDirectory() as directory:
+            repository = tagged_clone(checkout)
+            config_path = repository / ".github" / "repository-health.toml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace(
+                    'production_correspondence = "Releasable-Main"',
+                    'production_correspondence = "Unknown"',
+                ),
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "-C", str(repository), "add", str(config_path)], check=True, capture_output=True)
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repository),
+                    "-c",
+                    "user.name=Repository Health Tests",
+                    "-c",
+                    "user.email=tests@example.invalid",
+                    "commit",
+                    "-m",
+                    "Set unknown correspondence",
+                ],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(repository), "tag", "v0.1.0-draft", "HEAD"],
+                check=True,
+                capture_output=True,
+            )
+
+            with self.assertRaisesRegex(ValueError, "non-Unknown production correspondence"):
+                build_release(
+                    repository=repository,
+                    revision="HEAD",
+                    tag="v0.1.0-draft",
+                    source_repository="https://github.com/TedTschopp/github-repository-health",
+                    output_directory=directory,
+                )
+
 
 class ReleaseWorkflowTests(unittest.TestCase):
     def test_release_workflow_uses_revision_validation_attestation_and_release(self) -> None:
