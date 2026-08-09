@@ -137,6 +137,34 @@ A successful action run writes these stable names in its configured output direc
 
 Adding an optional JSON field is backward-compatible. Changing a filename, required field, field meaning, enum, calculation, or prioritization contract requires a versioned migration note and regression tests.
 
+## Release identity record
+
+The revision-bound release builder emits `RH-RELEASE-IDENTITY-1.0` alongside the source package and SPDX SBOM. The record is evidence about a published unit; it does not itself prove that the referenced GitHub Release or attestation exists.
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `schema_version` | Yes | `RH-RELEASE-IDENTITY-1.0`. |
+| `package_name` / `version` / `tag` | Yes | Stable unit name and immutable version identity. |
+| `source_repository` | Yes | Canonical HTTPS repository URL. |
+| `source_ref` | Yes | Protected immutable version-tag ref. |
+| `source_sha` | Yes | Exact 40-character source commit reachable from Main. |
+| `source_commit_time` | Yes | Source commit time used for reproducible metadata. |
+| `standard_version` | Yes | Controlled version read from the exact tagged `.github/repository-health.toml`. |
+| `production_correspondence` | Yes | Declared correspondence contract; initially `Releasable-Main`. |
+| `file_count` | Yes | Complete tracked-file population at `source_sha`. |
+| `artifacts` | Yes | Source archive and SBOM names, roles, media types, and SHA-256 digests. |
+| `builder` | Yes | Builder version, archive format, and exact Git and Python toolchain observed for repeatability analysis. |
+
+The stable release set is:
+
+- `github-repository-health-<tag>.tar.gz` — revision-bound source package;
+- `github-repository-health-<tag>.spdx.json` — SPDX 2.3 file inventory;
+- `github-repository-health-<tag>.source.json` — source and artifact identity;
+- `SHA256SUMS` — digest manifest for the three generated records; and
+- the GitHub artifact-attestation bundle returned by the pinned attestation action.
+
+Changing these names, required fields, digest semantics, or correspondence meaning requires a versioned migration note and regression tests.
+
 ## Exception record
 
 | Field | Required | Meaning |
