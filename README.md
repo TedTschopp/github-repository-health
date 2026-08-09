@@ -69,7 +69,7 @@ The repository now includes a read-only assessment engine and GitHub composite a
 
 Start with the [Automated Assessment Guide](docs/automation-guide.md), the local [scheduled workflow](.github/workflows/repository-health.yml), and the [consumer workflow example](examples/workflows/repository-health.yml). Repository-specific applicability and evidence references live in `.github/repository-health.toml`.
 
-Version tags invoke the separate [attested release workflow](.github/workflows/release.yml). It publishes a revision-bound source package, SPDX SBOM, source-identity record, checksum manifest, and GitHub artifact-attestation bundle only after the tagged revision is proven reachable from Main and validated by the authoritative check.
+Version tags invoke the separate [attested release workflow](.github/workflows/release.yml). It publishes a revision-bound source package, SPDX SBOM, source-identity record, checksum manifest, and GitHub artifact-attestation bundle only after the tagged revision is proven reachable from Main and validated by the authoritative check. The [release and production correspondence record](docs/release-and-production.md) identifies the current supported published unit and its exact evidence chain.
 
 The automation never treats an inaccessible setting or missing record as healthy. It does not execute repository-owned code, change settings, remediate findings, deploy software, or fail a workflow because the provisional grade is low. GitHub-only evidence cannot fully prove production, operational, security, or portfolio controls; those remain Unknown until acceptable evidence is connected or supplied.
 

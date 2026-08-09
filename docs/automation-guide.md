@@ -92,7 +92,7 @@ The leadership summary never presents the grade by itself. It includes evidence 
 
 The repository's separate [release workflow](../.github/workflows/release.yml) runs only for immutable version tags matching the documented `vMAJOR.MINOR.PATCH[-prerelease]` form. Before publishing, it verifies that the tagged commit is reachable from Main and that the exact commit has a successful `Validate repository` check.
 
-The workflow builds a revision-bound source archive, a file-level SPDX 2.3 SBOM, a revision-and-artifact identity record, and `SHA256SUMS`. GitHub's artifact-attestation action binds the archive digest and SBOM to the tag-triggered workflow identity. All five records are attached while GitHub creates the prerelease as a draft; repository-level immutable releases then lock the published assets and tag against deletion or update.
+The workflow builds a revision-bound source archive, a file-level SPDX 2.3 SBOM, a revision-and-artifact identity record, and `SHA256SUMS`. GitHub's artifact-attestation action binds the archive digest and SBOM statement to the publication-workflow identity. Normal publication runs from the tag; guarded recovery runs from Main and records that signer ref separately from the tagged artifact source. The release is created only after all five records are complete, and repository-level immutable releases then lock the published assets and tag against deletion or update.
 
 The release path is intentionally separate from the read-only assessor. Its verification and build job has only `contents: read` and `checks: read`; it transfers checksummed evidence to a second job. Only that isolated publisher receives `contents: write`, `attestations: write`, and `id-token: write`, and it never checks out or executes repository code. The assessment action remains read-only.
 
@@ -108,6 +108,8 @@ python3 -m automation.repository_health.release \
 ```
 
 The workflow fixes the runner family and Python patch; the identity also records the Git and Python toolchain. Matching bytes demonstrate same-toolchain repeatability, not universal cross-toolchain reproducibility. Local generation does not prove GitHub publication or attestation. Production correspondence is established only when the protected tag, release assets, digests, source identity, and GitHub attestation all agree.
+
+For this repository, the current unit, resolver, exact published identity, evidence digests, and supersession rules are controlled in the machine-readable [production identity record](../.github/repository-health-production.json) and explained in the [release and production correspondence record](release-and-production.md). Those records declare the resolver; they do not replace live verification of the release, tag, checksums, Main reachability, intervening Main validation, or attestations.
 
 Normal publication is tag-triggered. A guarded `workflow_dispatch` input accepts an existing protected version tag only for recovery from an interrupted or failed tag run. It rebuilds that tag's exact revision and applies the same Main-reachability, authoritative-check, tag/version/SHA, checksum, attestation, and existing-release safeguards; it cannot move the tag or replace a published release.
 

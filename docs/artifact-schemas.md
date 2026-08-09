@@ -165,6 +165,23 @@ The stable release set is:
 
 Changing these names, required fields, digest semantics, or correspondence meaning requires a versioned migration note and regression tests.
 
+## Production identity record
+
+The repository-level `.github/repository-health-production.json` file uses schema `RH-PRODUCTION-IDENTITY-1.0`. It is a versioned resolver and expected-identity record, not self-validating production proof.
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `schema_version` / `standard_version` | Yes | Record contract and controlled standard versions. |
+| `repository` | Yes | Canonical GitHub `owner/name` identity. |
+| `units` | Yes | Nonempty array of independently published or deployed units. |
+| `unit_id` / `kind` / `correspondence` | Per unit | Stable unit identity, resolver kind, and canonical production-correspondence contract. |
+| `selection` | Per unit | Deterministic selection rule, including tag derivation and whether prerelease, draft, or mutable latest aliases are permitted. |
+| `current` | Per unit | Expected release, tag object, source revision, publication state, artifact digests, and attestation identities. |
+| `validation` | Per unit | Required exact-revision checks, Main-ancestry rule, intervening-revision rule, and incomplete-history treatment. |
+| `limitations` | Per unit | Known contradictions or assurance boundaries that automation and reports must retain. |
+
+Automation MUST resolve the live target and compare it with this record. Missing APIs, incomplete Main/check history, stale selectors, or identity conflicts remain Unknown or Fail under the measurement dictionary; committed JSON alone cannot pass G-02.
+
 ## Exception record
 
 | Field | Required | Meaning |
