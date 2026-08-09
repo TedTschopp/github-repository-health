@@ -71,6 +71,12 @@ Start with the [Automated Assessment Guide](docs/automation-guide.md), the local
 
 The automation never treats an inaccessible setting or missing record as healthy. It does not execute repository-owned code, change settings, remediate findings, deploy software, or fail a workflow because the provisional grade is low. GitHub-only evidence cannot fully prove production, operational, security, or portfolio controls; those remain Unknown until acceptable evidence is connected or supplied.
 
+## Security, support, ownership, and rights
+
+Report suspected vulnerabilities privately through [SECURITY.md](SECURITY.md); use [SUPPORT.md](SUPPORT.md) for ordinary questions and defects. Accountabilities, critical paths, and the current backup-owner gap are recorded in [OWNERS.md](OWNERS.md) and enforced path ownership is declared in [`.github/CODEOWNERS`](.github/CODEOWNERS).
+
+The repository is publicly visible, but its contents are not open-source licensed. See the [All Rights Reserved Notice](LICENSE) before copying, modifying, or distributing the material.
+
 ## Versioning and contributions
 
 Normative changes follow [CONTRIBUTING.md](CONTRIBUTING.md) and are recorded in [CHANGELOG.md](CHANGELOG.md). External references are pinned in the source register and reviewed on their documented cadence.
