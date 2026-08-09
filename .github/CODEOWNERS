@@ -1,0 +1,11 @@
+# Default ownership for all repository content.
+* @TedTschopp
+
+# Security- and release-critical paths.
+/.github/ @TedTschopp
+/automation/ @TedTschopp
+/docs/ @TedTschopp
+/LICENSE @TedTschopp
+/OWNERS.md @TedTschopp
+/SECURITY.md @TedTschopp
+/SUPPORT.md @TedTschopp
