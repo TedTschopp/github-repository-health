@@ -20,7 +20,7 @@ methodology_evidence_ids = []
 methodology_contradictions = []
 # List only checks that independently validate Main; do not list the health
 # assessment itself unless it actually performs the repository's validation.
-authoritative_checks = []
+authoritative_checks = ["Validate repository"]
 deployable_units = ["Repository Health Standard documentation and assessment package"]
 production_correspondence = "Unknown"
 
