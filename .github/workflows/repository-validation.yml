@@ -1,0 +1,63 @@
+name: Repository validation
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out complete repository history
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+
+      - name: Run repository validation suite
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Check patch whitespace
+        run: git diff --check HEAD
+
+      - name: Exercise assessment and report contracts
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -euo pipefail
+          report_directory="$RUNNER_TEMP/repository-health-contract"
+          assessment_json="$report_directory/repository-health-assessment.json"
+          mkdir -p "$report_directory"
+          python3 -m automation.repository_health assess \
+            --repository . \
+            --catalog docs/control-catalog.md \
+            --config .github/repository-health.toml \
+            --output "$assessment_json"
+          python3 -m automation.repository_health.reporting \
+            --assessment "$assessment_json" \
+            --output-dir "$report_directory"
+          test -s "$assessment_json"
+          test -s "$report_directory/health-assessment.md"
+          test -s "$report_directory/leadership-summary.md"
+          test -s "$report_directory/leadership-summary.json"
