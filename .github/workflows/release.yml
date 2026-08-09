@@ -118,7 +118,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "A release or draft already exists for immutable tag $RELEASE_TAG; refusing to replace it." >&2
             exit 3
           fi
@@ -171,5 +171,6 @@ jobs:
             --latest=false \
             --notes-file "$notes" \
             --prerelease \
+            --repo "$GITHUB_REPOSITORY" \
             --title "Git Repository Health Standard $RELEASE_TAG" \
             --verify-tag
