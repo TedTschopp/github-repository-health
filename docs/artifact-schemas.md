@@ -150,7 +150,7 @@ The revision-bound release builder emits `RH-RELEASE-IDENTITY-1.0` alongside the
 | `source_sha` | Yes | Exact 40-character source commit reachable from Main. |
 | `source_commit_time` | Yes | Source commit time used for reproducible metadata. |
 | `standard_version` | Yes | Controlled version read from the exact tagged `.github/repository-health.toml`. |
-| `production_correspondence` | Yes | Declared correspondence contract; initially `Releasable-Main`. |
+| `production_correspondence` | Yes | Non-Unknown correspondence contract read from the exact tagged repository configuration. |
 | `file_count` | Yes | Complete tracked-file population at `source_sha`. |
 | `artifacts` | Yes | Source archive and SBOM names, roles, media types, and SHA-256 digests. |
 | `builder` | Yes | Builder version, archive format, and exact Git and Python toolchain observed for repeatability analysis. |
@@ -164,6 +164,23 @@ The stable release set is:
 - the GitHub artifact-attestation bundle returned by the pinned attestation action.
 
 Changing these names, required fields, digest semantics, or correspondence meaning requires a versioned migration note and regression tests.
+
+## Production identity record
+
+The repository-level `.github/repository-health-production.json` file uses schema `RH-PRODUCTION-IDENTITY-1.0`. It is a versioned resolver and expected-identity record, not self-validating production proof.
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `schema_version` / `standard_version` | Yes | Record contract and controlled standard versions. |
+| `repository` | Yes | Canonical GitHub `owner/name` identity. |
+| `units` | Yes | Nonempty array of independently published or deployed units. |
+| `unit_id` / `kind` / `correspondence` | Per unit | Stable unit identity, resolver kind, and canonical production-correspondence contract. |
+| `selection` | Per unit | Deterministic selection rule, including tag derivation and whether prerelease, draft, or mutable latest aliases are permitted. |
+| `current` | Per unit | Expected release, tag object, source revision, publication state, artifact digests, and attestation identities. |
+| `validation` | Per unit | Required exact-revision checks, Main-ancestry rule, intervening-revision rule, and incomplete-history treatment. |
+| `limitations` | Per unit | Known contradictions or assurance boundaries that automation and reports must retain. |
+
+Automation MUST resolve the live target and compare it with this record. Missing APIs, incomplete Main/check history, stale selectors, or identity conflicts remain Unknown or Fail under the measurement dictionary; committed JSON alone cannot pass G-02.
 
 ## Exception record
 

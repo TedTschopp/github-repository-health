@@ -21,8 +21,8 @@ methodology_contradictions = []
 # List only checks that independently validate Main; do not list the health
 # assessment itself unless it actually performs the repository's validation.
 authoritative_checks = ["Validate repository"]
-deployable_units = ["Repository Health Standard documentation and assessment package"]
-production_correspondence = "Unknown"
+deployable_units = ["github-repository-health"]
+production_correspondence = "Releasable-Main"
 
 # Applicability and evidence-collection hints.
 has_current_output = "true"
@@ -34,7 +34,7 @@ multi_contributor = "auto"
 supported = "true"
 has_critical_paths = "true"
 has_produced_artifacts = "true"
-automated_deployment = "false"
+automated_deployment = "true"
 operated_service = "false"
 portfolio_managed = "auto"
 has_work_refs = "auto"
@@ -51,7 +51,7 @@ canonical_integration_topology = "Unknown"
 change_ingress = "Unknown"
 branch_purpose_and_lifetime = "Unknown"
 integration_cadence = "Unknown"
-release_source = "Unknown"
+release_source = "Protected immutable version tag reachable from Main"
 promotion_mechanism = "Unknown"
 parallel_support = "Unknown"
 control_placement = "Unknown"

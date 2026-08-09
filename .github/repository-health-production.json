@@ -1,0 +1,89 @@
+{
+  "schema_version": "RH-PRODUCTION-IDENTITY-1.0",
+  "standard_version": "0.1.0-draft",
+  "repository": "TedTschopp/github-repository-health",
+  "units": [
+    {
+      "unit_id": "github-repository-health",
+      "kind": "github-release",
+      "correspondence": "Releasable-Main",
+      "selection": {
+        "strategy": "controlled-standard-version",
+        "tag_template": "v{standard.version}",
+        "allow_prerelease": true,
+        "allow_draft": false,
+        "allow_latest_alias": false
+      },
+      "current": {
+        "supported": true,
+        "release_id": 367601330,
+        "release_url": "https://github.com/TedTschopp/github-repository-health/releases/tag/v0.1.0-draft",
+        "published_at": "2026-08-09T22:27:15Z",
+        "immutable": true,
+        "tag": "v0.1.0-draft",
+        "tag_object_sha": "afb7b68cb5dbd4759f771f854db5a9e95ddd06c5",
+        "source_sha": "e1fe796eb2a4e472607bc11503a2364b02818160",
+        "artifacts": [
+          {
+            "name": "github-repository-health-v0.1.0-draft.tar.gz",
+            "role": "source-package",
+            "primary": true,
+            "sha256": "f6613cc472837095548d8e3b58b864e1ee6930c0366e90ca4fa942b1f34cca59"
+          },
+          {
+            "name": "github-repository-health-v0.1.0-draft.spdx.json",
+            "role": "sbom",
+            "primary": false,
+            "sha256": "968c153e291ba7e7ccbf51ff300c2c9b2492944e37ef46b0eca2f05e85a875c7"
+          },
+          {
+            "name": "github-repository-health-v0.1.0-draft.source.json",
+            "role": "release-identity",
+            "primary": false,
+            "sha256": "37a865ff1dc2e360da266c22417011ed8bff10f160ced47b023415942b46aeb1"
+          },
+          {
+            "name": "SHA256SUMS",
+            "role": "checksum-manifest",
+            "primary": false,
+            "sha256": "cb30f4b6e38cbb5306f9e32dfc91dacec1199c61a400ea163c225b463843d08c"
+          },
+          {
+            "name": "attestation.json",
+            "role": "sbom-attestation-bundle",
+            "primary": false,
+            "sha256": "76f597cb17659fdc7646f41881e5ee1a514f55a7521a3f93c31ea69b23b9ee96"
+          }
+        ],
+        "attestations": [
+          {
+            "kind": "github-immutable-release",
+            "covers": "protected tag object and all five release asset digests"
+          },
+          {
+            "kind": "sigstore-sbom",
+            "url": "https://github.com/TedTschopp/github-repository-health/attestations/39709713",
+            "predicate_type": "https://spdx.dev/Document/v2.3",
+            "subject_name": "github-repository-health-v0.1.0-draft.tar.gz",
+            "subject_sha256": "f6613cc472837095548d8e3b58b864e1ee6930c0366e90ca4fa942b1f34cca59",
+            "signer_workflow": ".github/workflows/release.yml",
+            "signer_ref": "refs/heads/main",
+            "signer_sha": "bee880be512af7aa68ea2b84eb2ac2ae26edacc2"
+          }
+        ]
+      },
+      "validation": {
+        "authoritative_checks": [
+          "Validate repository"
+        ],
+        "source_must_be_reachable_from_main": true,
+        "main_ahead_policy": "every-intervening-accepted-main-revision-must-pass-authoritative-checks",
+        "incomplete_history_result": "Unknown"
+      },
+      "limitations": [
+        "The immutable v0.1.0-draft source configuration still declared production correspondence Unknown; current Main establishes the Releasable-Main contract after publication.",
+        "The custom SBOM attestation authenticates the archive and SPDX statement but is not SLSA source provenance for the tagged source commit."
+      ]
+    }
+  ]
+}
