@@ -18,7 +18,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 def tagged_clone(parent: str, *tags: str) -> Path:
     clone = Path(parent) / "repository"
     subprocess.run(
-        ["git", "clone", "--local", "--no-hardlinks", str(ROOT), str(clone)],
+        ["git", "clone", "--local", "--no-hardlinks", "--no-tags", str(ROOT), str(clone)],
         check=True,
         capture_output=True,
         text=True,
@@ -144,6 +144,9 @@ class ReleaseWorkflowTests(unittest.TestCase):
     def test_release_workflow_uses_revision_validation_attestation_and_release(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("tags:\n      - 'v*'", text)
+        self.assertIn("workflow_dispatch:", text)
+        self.assertIn("release_tag:", text)
+        self.assertIn("RELEASE_TAG:", text)
         self.assertIn("git merge-base --is-ancestor", text)
         self.assertIn('name == \"Validate repository\"', text)
         self.assertIn("python3 -m automation.repository_health.release", text)
@@ -152,8 +155,9 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("gh release create", text)
         self.assertIn("--verify-tag", text)
         self.assertIn("refusing to replace it", text)
-        self.assertIn("release-evidence-${{ github.sha }}-${{ github.run_attempt }}", text)
+        self.assertIn("release-evidence-${{ github.run_id }}-${{ github.run_attempt }}", text)
         self.assertLess(text.index("Refuse an existing release or draft"), text.index("Attest source package and SBOM"))
+        self.assertEqual(text.count("cd release-dist\n            sha256sum -c SHA256SUMS"), 2)
 
     def test_release_workflow_has_narrow_explicit_permissions(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")

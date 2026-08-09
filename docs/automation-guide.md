@@ -109,6 +109,8 @@ python3 -m automation.repository_health.release \
 
 The workflow fixes the runner family and Python patch; the identity also records the Git and Python toolchain. Matching bytes demonstrate same-toolchain repeatability, not universal cross-toolchain reproducibility. Local generation does not prove GitHub publication or attestation. Production correspondence is established only when the protected tag, release assets, digests, source identity, and GitHub attestation all agree.
 
+Normal publication is tag-triggered. A guarded `workflow_dispatch` input accepts an existing protected version tag only for recovery from an interrupted or failed tag run. It rebuilds that tag's exact revision and applies the same Main-reachability, authoritative-check, tag/version/SHA, checksum, attestation, and existing-release safeguards; it cannot move the tag or replace a published release.
+
 ## 3. Evidence boundaries
 
 ### 3.1 Evidence the action can collect directly
