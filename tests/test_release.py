@@ -153,6 +153,8 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("actions/attest@", text)
         self.assertIn("sbom-path:", text)
         self.assertIn("gh release create", text)
+        self.assertIn('gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY"', text)
+        self.assertEqual(text.count('--repo "$GITHUB_REPOSITORY"'), 2)
         self.assertIn("--verify-tag", text)
         self.assertIn("refusing to replace it", text)
         self.assertIn("release-evidence-${{ github.run_id }}-${{ github.run_attempt }}", text)
