@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.coverage
+.pytest_cache/
+.ruff_cache/
+
+# Generated repository-health assessments are workflow artifacts, not source.
+repository-health-output/
+repo-health-output/
+repository-health-report/

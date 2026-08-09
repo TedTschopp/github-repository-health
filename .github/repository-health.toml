@@ -1,0 +1,74 @@
+# Repository Health Standard repository declaration
+#
+# Keep this file versioned with the repository. Values describe applicability;
+# they do not declare that a control passes. Use "unknown" when the answer cannot
+# be supported. Tri-state fields accept "true", "false", "auto", or "unknown".
+
+[standard]
+version = "0.1.0-draft"
+
+[repository]
+type = "Documentation/content"
+lifecycle = "Active"
+risk_tier = "Baseline"
+main_branch = "main"
+owner = "Enterprise Architecture"
+methodology = "Unclassified"
+observed_methodology = "Unclassified"
+methodology_confidence = "Low"
+methodology_evidence_ids = []
+methodology_contradictions = []
+# List only checks that independently validate Main; do not list the health
+# assessment itself unless it actually performs the repository's validation.
+authoritative_checks = []
+deployable_units = ["Repository Health Standard documentation and assessment package"]
+production_correspondence = "Unknown"
+
+# Applicability and evidence-collection hints.
+has_current_output = "true"
+publishes_artifacts = "true"
+has_dependencies = "auto"
+has_automation = "true"
+has_proposed_change_validation = "auto"
+multi_contributor = "auto"
+supported = "true"
+has_critical_paths = "true"
+has_produced_artifacts = "true"
+automated_deployment = "false"
+operated_service = "false"
+portfolio_managed = "auto"
+has_work_refs = "auto"
+
+[assessment]
+observation_days = 90
+low_activity_days = 365
+assessor = "repository-health automation"
+reviewer = ""
+next_review = ""
+
+[methodology_axes]
+canonical_integration_topology = "Unknown"
+change_ingress = "Unknown"
+branch_purpose_and_lifetime = "Unknown"
+integration_cadence = "Unknown"
+release_source = "Unknown"
+promotion_mechanism = "Unknown"
+parallel_support = "Unknown"
+control_placement = "Unknown"
+repository_topology = "Unknown"
+
+[dora]
+available = false
+reason = "This repository publishes a standard and assessment package; it does not operate a deployable service."
+
+# A control override is optional and must cite its evidence. Omitting an override
+# allows the assessor to classify the control from collected evidence. Example:
+#
+# [controls."SPI-01"]
+# conformance = "Met"
+# assurance = "E3"
+# rationale = "Main validation succeeded throughout the observation window."
+# evidence_ids = ["ci-main-history"]
+#
+# An N/A result additionally requires `n_a_approved_by`, `n_a_approved_at`, and
+# `n_a_review_date`; difficulty measuring a control is Unknown, not N/A.

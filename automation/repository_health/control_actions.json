@@ -1,0 +1,282 @@
+{
+  "SPI-01": {
+    "title": "Restore confidence in Main",
+    "action": "Make the exact version on Main pass the repository's required build or validation and confirm that it is ready to release.",
+    "owner_role": "Repository technical owner",
+    "why_it_matters": "Main is the approved source line for future releases. If its readiness is not proven, the organization cannot safely rely on the repository.",
+    "expected_evidence_or_outcome": "A successful, current build or validation record tied to the exact assessed version on Main, with every required check complete.",
+    "priority_order": 1
+  },
+  "SPI-02": {
+    "title": "Identify the source of every live or published output",
+    "action": "Record the exact, unchangeable source version behind every currently running, published, distributed, or supported output and show that it came through Main.",
+    "owner_role": "Release owner",
+    "why_it_matters": "Leaders need to know what is in use and where it came from so incidents, audits, and corrections can be handled decisively.",
+    "expected_evidence_or_outcome": "A complete list of current outputs with an unchangeable release identity and a verified link back to Main for each one.",
+    "priority_order": 2
+  },
+  "SPI-03": {
+    "title": "Give every release a permanent identity",
+    "action": "Assign every supported release a unique identity that cannot be overwritten and retain a verifiable record of how it was produced.",
+    "owner_role": "Release owner",
+    "why_it_matters": "A permanent release identity prevents a named version from changing silently and makes investigations and recovery dependable.",
+    "expected_evidence_or_outcome": "Every sampled release has a permanent source identity, output identity, and production record that agree.",
+    "priority_order": 9
+  },
+  "SPI-04": {
+    "title": "Define how Main corresponds to what is in use",
+    "action": "Choose and document, for each product or output, the approved relationship between Main and the version currently in use, then surface any departure from it.",
+    "owner_role": "Product and release owner",
+    "why_it_matters": "A clear operating rule distinguishes intentional release timing from uncontrolled drift.",
+    "expected_evidence_or_outcome": "A named correspondence rule for every in-scope output, with current records showing either conformance or an owned correction plan.",
+    "priority_order": 10
+  },
+  "BTC-01": {
+    "title": "Make the build or validation repeatable",
+    "action": "Provide one documented, non-interactive way to build or validate the repository from a clean copy using declared inputs.",
+    "owner_role": "Repository technical owner",
+    "why_it_matters": "The organization should not depend on one person's computer or undocumented knowledge to recreate or verify its work.",
+    "expected_evidence_or_outcome": "A version-controlled command or process and a recent successful run from a clean copy.",
+    "priority_order": 11
+  },
+  "BTC-02": {
+    "title": "Check every accepted change automatically",
+    "action": "Ensure every proposed and accepted change triggers the required automated validation for the exact version that will be placed on Main.",
+    "owner_role": "Delivery automation owner",
+    "why_it_matters": "Consistent automatic checks catch avoidable problems and show that accepted work was actually verified.",
+    "expected_evidence_or_outcome": "Every change in the assessment window is linked to a completed validation result for the accepted version.",
+    "priority_order": 12
+  },
+  "BTC-03": {
+    "title": "Match validation to the risk of each change",
+    "action": "Define which checks each kind of change requires and prevent acceptance until all applicable checks are complete.",
+    "owner_role": "Quality owner",
+    "why_it_matters": "Important changes need stronger proof, while low-risk changes should still receive the checks that matter to them.",
+    "expected_evidence_or_outcome": "A current change-to-check matrix and complete results for every sampled change category.",
+    "priority_order": 13
+  },
+  "BTC-04": {
+    "title": "Shorten the wait for change feedback",
+    "action": "Set an approved time target for required validation and address the steps that regularly exceed it.",
+    "owner_role": "Delivery automation owner",
+    "why_it_matters": "Timely feedback supports smaller, safer changes and reduces pressure to bypass safeguards.",
+    "expected_evidence_or_outcome": "A documented time target and measured results showing that at least 95 percent of required feedback completes within it.",
+    "priority_order": 26
+  },
+  "BTC-05": {
+    "title": "Make validation results dependable",
+    "action": "Identify checks that change result without a meaningful source change, correct their causes, and time-limit any temporary quarantine.",
+    "owner_role": "Quality owner",
+    "why_it_matters": "Unreliable checks train people to ignore failures and can hide real defects.",
+    "expected_evidence_or_outcome": "Measured repeatability within the standard threshold and an owned, dated record for any temporarily isolated check.",
+    "priority_order": 20
+  },
+  "CGD-01": {
+    "title": "Control and record every change to Main",
+    "action": "Require every accepted change to Main to retain who made it, who authorized it, what validation passed, and whether an emergency path was used.",
+    "owner_role": "Repository administrator",
+    "why_it_matters": "A complete decision trail provides accountability and lets the organization explain exactly how accepted work entered Main.",
+    "expected_evidence_or_outcome": "A complete, current audit chain for every sampled change, including any emergency or privileged change.",
+    "priority_order": 3
+  },
+  "CGD-02": {
+    "title": "Protect Main and every production-critical source line",
+    "action": "Prevent unauthorized changes, deletion, and history rewriting on Main and every source line or release label that can affect production.",
+    "owner_role": "Repository administrator and security owner",
+    "why_it_matters": "These protections prevent one unapproved action from changing or erasing the organization's accepted and released work.",
+    "expected_evidence_or_outcome": "A complete inventory of production-critical source lines and release labels, effective protection settings, limited bypass access, and a successful protection test.",
+    "priority_order": 4
+  },
+  "CGD-03": {
+    "title": "Require an independent review where risk warrants it",
+    "action": "Have an authorized person other than the author approve the final version of each in-scope change before acceptance.",
+    "owner_role": "Repository technical owner",
+    "why_it_matters": "Independent review reduces accidental and harmful changes and spreads understanding beyond the author.",
+    "expected_evidence_or_outcome": "Every sampled in-scope change shows the required independent approval for its final accepted version.",
+    "priority_order": 14
+  },
+  "CGD-04": {
+    "title": "Prevent acceptance when required checks are incomplete",
+    "action": "Configure the repository so a change cannot be accepted while a required check is missing, failed, or attached to an earlier version.",
+    "owner_role": "Repository administrator",
+    "why_it_matters": "A written rule only protects the organization when the acceptance process consistently enforces it.",
+    "expected_evidence_or_outcome": "Protection settings and sampled changes show that only the final, fully validated version can be accepted.",
+    "priority_order": 7
+  },
+  "CGD-05": {
+    "title": "Bring actual work practices back in line with the declared method",
+    "action": "Compare observed change, branch, release, and urgent-fix practices with the declared working method and correct or formally update each material difference.",
+    "owner_role": "Repository technical owner",
+    "why_it_matters": "A method that differs from actual behavior creates hidden risk and makes controls unreliable.",
+    "expected_evidence_or_outcome": "Current practice and the declared method agree, with any approved hybrid practice explicitly documented and evidenced.",
+    "priority_order": 28
+  },
+  "CGD-06": {
+    "title": "Limit and account for emergency or privileged changes",
+    "action": "Restrict emergency and privileged access, record why each use was necessary, review it promptly, and remove temporary access on time.",
+    "owner_role": "Repository administrator and security owner",
+    "why_it_matters": "Emergency paths may be necessary, but untracked or standing privilege can bypass the safeguards leaders rely on.",
+    "expected_evidence_or_outcome": "A current access list and a complete, timely record for every privileged or emergency change in the assessment window.",
+    "priority_order": 8
+  },
+  "SSC-01": {
+    "title": "Prevent exposed passwords, keys, and tokens",
+    "action": "Block sensitive credentials from entering the repository, review existing history, and use a tested response process when exposure occurs.",
+    "owner_role": "Security owner",
+    "why_it_matters": "An exposed credential can give an unauthorized person access to systems or data even after the source change is removed.",
+    "expected_evidence_or_outcome": "Active prevention, a current history review, and evidence that any detected credential was disabled, replaced, and investigated on time.",
+    "priority_order": 5
+  },
+  "SSC-02": {
+    "title": "Maintain a complete inventory of outside components",
+    "action": "Produce and retain a current inventory of the outside software and services included in each released product.",
+    "owner_role": "Product security owner",
+    "why_it_matters": "The organization cannot respond confidently to a supplier problem if it does not know which products include the affected component.",
+    "expected_evidence_or_outcome": "Every sampled release has a complete, machine-readable component inventory tied to that exact release.",
+    "priority_order": 17
+  },
+  "SSC-03": {
+    "title": "Resolve high-risk component problems on time",
+    "action": "Assign, prioritize, and correct known component and security problems within the approved time limits, or record a time-limited risk decision.",
+    "owner_role": "Product security owner",
+    "why_it_matters": "Known high-risk weaknesses become more likely to cause harm when ownership or deadlines are unclear.",
+    "expected_evidence_or_outcome": "A current problem register with owner, due date, disposition, and no overdue item outside an approved, unexpired risk decision.",
+    "priority_order": 6
+  },
+  "SSC-04": {
+    "title": "Protect the release automation itself",
+    "action": "Limit automation permissions, fix outside automation components to reviewed versions, protect sensitive values, and approve changes to release workflows.",
+    "owner_role": "Delivery automation and security owner",
+    "why_it_matters": "Compromised release automation can alter products even when the source itself was reviewed correctly.",
+    "expected_evidence_or_outcome": "A reviewed automation configuration with minimum permissions, protected sensitive values, fixed component versions, and controlled workflow changes.",
+    "priority_order": 15
+  },
+  "OWM-01": {
+    "title": "Name an accountable owner and backup",
+    "action": "Assign a current business or product owner, a technical owner, and a backup route for the repository, then confirm that each accepts the role.",
+    "owner_role": "Product or service owner",
+    "why_it_matters": "Improvement work and urgent decisions stall when no one is clearly accountable.",
+    "expected_evidence_or_outcome": "Current ownership records, acknowledged responsibilities, and a tested escalation route.",
+    "priority_order": 16
+  },
+  "OWM-02": {
+    "title": "Remove single-person dependency from critical work",
+    "action": "Identify work that only one person can safely perform and transfer enough knowledge and access to at least one qualified backup.",
+    "owner_role": "Engineering manager and technical owner",
+    "why_it_matters": "A single-person dependency can stop releases, recovery, or support when that person is unavailable.",
+    "expected_evidence_or_outcome": "Named primary and backup owners for every critical area, with a recent successful handoff, review, or recovery exercise.",
+    "priority_order": 18
+  },
+  "OWM-03": {
+    "title": "Keep the toolchain and known obligations current",
+    "action": "List supported tools and versions, assign owners to outdated or unsupported items, and track each material obligation to a dated decision.",
+    "owner_role": "Repository technical owner",
+    "why_it_matters": "Unsupported tools and unowned maintenance needs make future changes and recovery less predictable.",
+    "expected_evidence_or_outcome": "A current toolchain record and an owned register of material upgrades, debt, and end-of-support dates.",
+    "priority_order": 25
+  },
+  "OWM-04": {
+    "title": "Make source changes reviewable",
+    "action": "Keep the human-maintained source clear, separate generated output, and document how generated material can be reproduced and reviewed.",
+    "owner_role": "Repository technical owner",
+    "why_it_matters": "Reviewers cannot judge a change reliably when generated or unreadable material hides what people actually changed.",
+    "expected_evidence_or_outcome": "A documented source/output boundary, reproducible generation process, and reviewable sampled changes.",
+    "priority_order": 30
+  },
+  "DCR-01": {
+    "title": "Provide a clear starting guide",
+    "action": "Give a new reader a current explanation of the repository's purpose, owner, status, Main line, outputs, and basic validation steps.",
+    "owner_role": "Repository technical owner",
+    "why_it_matters": "Clear orientation reduces delays, incorrect assumptions, and dependency on informal knowledge.",
+    "expected_evidence_or_outcome": "A current starting document that a new contributor can follow successfully.",
+    "priority_order": 29
+  },
+  "DCR-02": {
+    "title": "Document how work is proposed, checked, and released",
+    "action": "Explain the actual path for proposing, reviewing, validating, accepting, and releasing changes, including urgent changes.",
+    "owner_role": "Repository technical owner",
+    "why_it_matters": "People are more likely to follow controls when the expected path is clear and matches reality.",
+    "expected_evidence_or_outcome": "A current contributor guide that matches observed practice and covers the normal and urgent paths.",
+    "priority_order": 27
+  },
+  "DCR-03": {
+    "title": "Publish support and security reporting routes",
+    "action": "State where users and contributors should report support needs and sensitive security concerns, who responds, and the expected response time.",
+    "owner_role": "Product and security owner",
+    "why_it_matters": "Clear reporting routes help the right people receive and contain problems before they spread.",
+    "expected_evidence_or_outcome": "Visible, tested support and private security-reporting routes with named owners and response expectations.",
+    "priority_order": 19
+  },
+  "DCR-04": {
+    "title": "Clarify rights, versions, and release changes",
+    "action": "Document use rights, the versioning approach, supported versions, and material changes for every published or distributed output.",
+    "owner_role": "Product and release owner",
+    "why_it_matters": "Consumers need to know what they may use, what changed, and which versions the organization still supports.",
+    "expected_evidence_or_outcome": "Current rights, version, support, and release-change records for each in-scope output.",
+    "priority_order": 31
+  },
+  "RRO-01": {
+    "title": "Create one complete release record",
+    "action": "For every release, retain the approval, accepted source version, validation result, output identity, destination, and release result in one connected record.",
+    "owner_role": "Release owner",
+    "why_it_matters": "A complete release record lets the organization prove what changed and act quickly when a correction is needed.",
+    "expected_evidence_or_outcome": "Every sampled release has a complete and internally consistent evidence chain.",
+    "priority_order": 21
+  },
+  "RRO-02": {
+    "title": "Practice the recovery or withdrawal path",
+    "action": "Define the safe way to reverse, correct, withdraw, or supersede each output and exercise that path at the required interval.",
+    "owner_role": "Service or product owner",
+    "why_it_matters": "A recovery plan that has not been practiced may fail when customers or operations are already under pressure.",
+    "expected_evidence_or_outcome": "A current recovery path for each output and a successful, recent exercise with actions from any lessons learned.",
+    "priority_order": 22
+  },
+  "RRO-03": {
+    "title": "Control the path into production",
+    "action": "Allow only approved release identities and authorized people or automation to change production, with the result recorded.",
+    "owner_role": "Release and operations owner",
+    "why_it_matters": "A controlled production path prevents unreviewed or unidentified work from reaching users.",
+    "expected_evidence_or_outcome": "Current access and promotion rules plus sampled records showing only approved releases reached production.",
+    "priority_order": 23
+  },
+  "RRO-04": {
+    "title": "Confirm operational readiness before release",
+    "action": "Define and complete the required monitoring, support, response, and recovery readiness checks before each material release.",
+    "owner_role": "Operations owner",
+    "why_it_matters": "A technically successful release can still disrupt the business when support and recovery are not ready.",
+    "expected_evidence_or_outcome": "A risk-based readiness checklist and completed evidence for every sampled material release.",
+    "priority_order": 24
+  },
+  "RLP-01": {
+    "title": "Complete the repository's portfolio record",
+    "action": "Record the repository's purpose, type, lifecycle, risk, authority, owner, Main line, outputs, and review date in the portfolio inventory.",
+    "owner_role": "Repository portfolio owner",
+    "why_it_matters": "Leaders cannot govern cost, risk, or retirement decisions without a reliable inventory.",
+    "expected_evidence_or_outcome": "A complete, current portfolio record that agrees with repository and production evidence.",
+    "priority_order": 32
+  },
+  "RLP-02": {
+    "title": "Remove or govern stale source lines and release labels",
+    "action": "Review old branches and release labels, delete those with no continuing purpose, and assign an owner and expiry to every approved exception.",
+    "owner_role": "Repository technical owner",
+    "why_it_matters": "Unmanaged old lines create confusion, hide unsupported work, and can preserve unsafe access paths.",
+    "expected_evidence_or_outcome": "A current inventory with disposition, owner, and expiry for every stale item.",
+    "priority_order": 33
+  },
+  "RLP-03": {
+    "title": "Make retirement safe and explicit",
+    "action": "When an output or repository is deprecated, archived, or retired, notify consumers, preserve required records, remove active access, and name any successor.",
+    "owner_role": "Product and portfolio owner",
+    "why_it_matters": "An incomplete retirement leaves consumers on unsupported work and can leave forgotten access or obligations behind.",
+    "expected_evidence_or_outcome": "An approved retirement record showing consumer notice, successor or final-state guidance, preserved evidence, and removed active paths.",
+    "priority_order": 34
+  },
+  "RLP-04": {
+    "title": "Identify the one authoritative repository",
+    "action": "Name the authoritative repository for each product and clearly mark every mirror, fork, or duplicate so people do not release from the wrong source.",
+    "owner_role": "Repository portfolio owner",
+    "why_it_matters": "Competing copies create uncertainty about ownership, accepted changes, and the source of releases.",
+    "expected_evidence_or_outcome": "One confirmed authoritative repository per product, with all other copies labeled and governed for their intended purpose.",
+    "priority_order": 35
+  }
+}

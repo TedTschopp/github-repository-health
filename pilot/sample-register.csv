@@ -1,0 +1,13 @@
+pilot_id,repository,authoritative_url,primary_type,secondary_facets,declared_methodology,observed_methodology,risk_tier,repository_owner,assessor_a,assessor_b,status,notes
+P01,,,,,,,Baseline,,,,Nominated,
+P02,,,,,,,Elevated,,,,Nominated,
+P03,,,,,,,Critical,,,,Nominated,
+P04,,,,,,,Baseline,,,,Nominated,
+P05,,,,,,,Elevated,,,,Nominated,
+P06,,,,,,,Critical,,,,Nominated,
+P07,,,,,,,Baseline,,,,Nominated,
+P08,,,,,,,Elevated,,,,Nominated,
+P09,,,,,,,Critical,,,,Nominated,
+P10,,,,,,,Baseline,,,,Nominated,
+P11,,,,,,,Elevated,,,,Nominated,
+P12,,,,,,,Critical,,,,Nominated,

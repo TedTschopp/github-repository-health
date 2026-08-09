@@ -1,0 +1,57 @@
+name: Repository health assessment
+
+on:
+  schedule:
+    # Weekly on Monday at 13:17 UTC. The off-hour minute reduces scheduler congestion.
+    - cron: '17 13 * * 1'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  checks: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: repository-health-${{ github.repository }}
+  cancel-in-progress: true
+
+jobs:
+  assess:
+    name: Assess repository health
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out complete repository history
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+
+      - name: Generate health and leadership reports
+        id: health
+        uses: ./.github/actions/repository-health
+        with:
+          config-path: .github/repository-health.toml
+          output-directory: repository-health-report
+          github-token: ${{ github.token }}
+
+      # The composite action deliberately does not upload artifacts. Retention is a
+      # workflow-owner decision, so this explicit step keeps that policy visible.
+      - name: Upload repository health reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: repository-health-${{ github.run_id }}-${{ github.run_attempt }}
+          path: repository-health-report/
+          if-no-files-found: warn
+          retention-days: 90
+
+      # v0.1.0-draft is diagnostic and provisional. This workflow never fails
+      # because a score or grade is low; only execution or report errors fail it.

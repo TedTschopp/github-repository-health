@@ -1,0 +1,73 @@
+# Copy to .github/repository-health.toml in the repository being assessed, then
+# replace Unknown values only when the declared value can be supported. These
+# fields establish applicability; they do not declare that a control passes.
+# Tri-state fields accept "true", "false", "auto", or "unknown".
+
+[standard]
+version = "0.1.0-draft"
+
+[repository]
+type = "Unknown"
+lifecycle = "Active"
+risk_tier = "Baseline"
+main_branch = ""
+owner = ""
+methodology = "Unclassified"
+observed_methodology = "Unclassified"
+methodology_confidence = "Low"
+methodology_evidence_ids = []
+methodology_contradictions = []
+# Use exact GitHub check names that independently validate the Main revision.
+# Do not count the health assessment itself as repository validation.
+authoritative_checks = []
+deployable_units = []
+production_correspondence = "Unknown"
+
+has_current_output = "unknown"
+publishes_artifacts = "unknown"
+has_dependencies = "auto"
+has_automation = "auto"
+has_proposed_change_validation = "auto"
+multi_contributor = "auto"
+supported = "unknown"
+has_critical_paths = "unknown"
+has_produced_artifacts = "unknown"
+automated_deployment = "unknown"
+operated_service = "unknown"
+portfolio_managed = "unknown"
+has_work_refs = "auto"
+
+[assessment]
+observation_days = 90
+low_activity_days = 365
+assessor = "repository-health automation"
+reviewer = ""
+next_review = ""
+
+[methodology_axes]
+canonical_integration_topology = "Unknown"
+change_ingress = "Unknown"
+branch_purpose_and_lifetime = "Unknown"
+integration_cadence = "Unknown"
+release_source = "Unknown"
+promotion_mechanism = "Unknown"
+parallel_support = "Unknown"
+control_placement = "Unknown"
+repository_topology = "Unknown"
+
+[dora]
+available = false
+reason = "No reliable product-level DORA inputs were supplied."
+
+# Evidence-backed overrides are optional. The engine otherwise evaluates each
+# control from collected evidence and reports unsupported outcomes as Unknown.
+#
+# [controls."SPI-01"]
+# conformance = "Met"
+# assurance = "E3"
+# rationale = "Authoritative validation passed for the exact Main revision."
+# evidence_ids = ["ci-main-history"]
+#
+# An N/A result also requires `n_a_approved_by`, `n_a_approved_at`, and
+# `n_a_review_date`. Difficulty measuring a control is Unknown, not N/A.
+# Temporary waivers do not change the observed rating.

@@ -1,0 +1,64 @@
+# Repository Health Standard 0.1.0-draft assessment configuration.
+# Values intentionally default to Unknown rather than manufacturing assurance.
+
+[standard]
+version = "0.1.0-draft"
+
+[repository]
+type = "Unknown"
+lifecycle = "Active"
+risk_tier = "Baseline"
+main_branch = ""
+owner = ""
+methodology = "Unclassified"
+observed_methodology = "Unclassified"
+methodology_confidence = "Low"
+methodology_evidence_ids = []
+methodology_contradictions = []
+authoritative_checks = []
+deployable_units = []
+production_correspondence = "Unknown"
+has_current_output = "unknown"
+publishes_artifacts = "unknown"
+has_dependencies = "auto"
+has_automation = "auto"
+has_proposed_change_validation = "auto"
+multi_contributor = "auto"
+supported = "unknown"
+has_critical_paths = "unknown"
+has_produced_artifacts = "unknown"
+automated_deployment = "unknown"
+operated_service = "unknown"
+portfolio_managed = "unknown"
+has_work_refs = "auto"
+
+[assessment]
+observation_days = 90
+low_activity_days = 365
+assessor = "repository-health automation"
+reviewer = ""
+next_review = ""
+
+[methodology_axes]
+canonical_integration_topology = "Unknown"
+change_ingress = "Unknown"
+branch_purpose_and_lifetime = "Unknown"
+integration_cadence = "Unknown"
+release_source = "Unknown"
+promotion_mechanism = "Unknown"
+parallel_support = "Unknown"
+control_placement = "Unknown"
+repository_topology = "Unknown"
+
+[dora]
+available = false
+reason = "No reliable product-level DORA inputs were supplied."
+
+# Evidence-backed dispositions may be supplied as tables. N/A also requires
+# n_a_approved_by, n_a_approved_at, and n_a_review_date. Temporary waivers do
+# not change these observed ratings.
+# [controls."SPI-01"]
+# conformance = "Met"
+# assurance = "E3"
+# rationale = "Authoritative build succeeded for the exact Main SHA."
+# evidence_ids = ["E-CI-MAIN"]

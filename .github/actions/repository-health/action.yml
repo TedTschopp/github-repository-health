@@ -1,0 +1,222 @@
+name: Repository Health Assessment
+description: Generate a repository health assessment and a seven-action leadership summary.
+author: Enterprise Architecture
+
+inputs:
+  repository-path:
+    description: Repository directory to assess, relative to the workflow workspace unless absolute.
+    required: false
+    default: .
+  config-path:
+    description: Repository-specific TOML declaration, relative to the workflow workspace unless absolute.
+    required: false
+    default: .github/repository-health.toml
+  output-directory:
+    description: Directory for the JSON assessment and rendered Markdown and JSON reports.
+    required: false
+    default: repository-health-report
+  github-repository:
+    description: Optional GitHub owner/name used to collect hosting evidence. Defaults to the current repository.
+    required: false
+    default: ''
+  github-token:
+    description: Optional read-only token used to collect GitHub hosting evidence. The token is never written to a report.
+    required: false
+    default: ''
+
+outputs:
+  report-directory:
+    description: Absolute directory containing all generated reports.
+    value: ${{ steps.assess.outputs.report-directory }}
+  assessment-json:
+    description: Absolute path to the machine-readable health assessment.
+    value: ${{ steps.assess.outputs.assessment-json }}
+  health-assessment:
+    description: Absolute path to the detailed Markdown health assessment.
+    value: ${{ steps.assess.outputs.health-assessment }}
+  leadership-summary:
+    description: Absolute path to the nontechnical, action-oriented Markdown summary.
+    value: ${{ steps.assess.outputs.leadership-summary }}
+  leadership-summary-json:
+    description: Absolute path to the machine-readable leadership summary.
+    value: ${{ steps.assess.outputs.leadership-summary-json }}
+  raw-score:
+    description: Uncapped diagnostic score from 0 through 100.
+    value: ${{ steps.assess.outputs.raw-score }}
+  effective-score:
+    description: Diagnostic score after the foundational-gate cap, when applicable.
+    value: ${{ steps.assess.outputs.effective-score }}
+  grade:
+    description: Effective diagnostic letter grade.
+    value: ${{ steps.assess.outputs.grade }}
+  maturity:
+    description: Effective maturity label corresponding to the score.
+    value: ${{ steps.assess.outputs.maturity }}
+  cap-applied:
+    description: Whether any foundational-gate cap is active for this assessment.
+    value: ${{ steps.assess.outputs.cap-applied }}
+  assurance:
+    description: Evidence-assurance result reported by the assessment engine.
+    value: ${{ steps.assess.outputs.assurance }}
+
+runs:
+  using: composite
+  steps:
+    - name: Assess repository and render reports
+      id: assess
+      shell: bash
+      env:
+        RH_REPOSITORY_PATH: ${{ inputs.repository-path }}
+        RH_CONFIG_PATH: ${{ inputs.config-path }}
+        RH_OUTPUT_DIRECTORY: ${{ inputs.output-directory }}
+        RH_GITHUB_REPOSITORY_INPUT: ${{ inputs.github-repository }}
+        RH_GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+
+        action_root="$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)"
+        catalog_path="$action_root/docs/control-catalog.md"
+        repository_path="$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve())' "$RH_REPOSITORY_PATH")"
+        config_path="$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve())' "$RH_CONFIG_PATH")"
+        output_directory="$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve())' "$RH_OUTPUT_DIRECTORY")"
+        assessment_json="$output_directory/repository-health-assessment.json"
+
+        if [[ ! -d "$repository_path" ]]; then
+          echo "Repository path is not a directory: $repository_path" >&2
+          exit 2
+        fi
+        if [[ ! -f "$config_path" ]]; then
+          echo "Repository health configuration was not found: $config_path" >&2
+          exit 2
+        fi
+        if [[ ! -f "$catalog_path" ]]; then
+          echo "Bundled control catalog was not found: $catalog_path" >&2
+          exit 2
+        fi
+
+        mkdir -p "$output_directory"
+
+        github_repository="$RH_GITHUB_REPOSITORY_INPUT"
+        if [[ -z "$github_repository" ]]; then
+          github_repository="${GITHUB_REPOSITORY:-}"
+        fi
+
+        assess_args=(
+          assess
+          --repository "$repository_path"
+          --catalog "$catalog_path"
+          --config "$config_path"
+          --output "$assessment_json"
+        )
+        if [[ -n "$github_repository" ]]; then
+          assess_args+=(--github-repository "$github_repository")
+        fi
+        if [[ -n "$RH_GITHUB_TOKEN" ]]; then
+          assess_args+=(--github-token-env RH_GITHUB_TOKEN)
+        fi
+
+        run_result="$(
+          PYTHONPATH="$action_root${PYTHONPATH:+:$PYTHONPATH}" \
+            python3 -m automation.repository_health "${assess_args[@]}"
+        )"
+        unset RH_GITHUB_TOKEN
+
+        PYTHONPATH="$action_root${PYTHONPATH:+:$PYTHONPATH}" \
+          python3 -m automation.repository_health.reporting \
+            --assessment "$assessment_json" \
+            --output-dir "$output_directory"
+
+        for report in \
+          "$assessment_json" \
+          "$output_directory/health-assessment.md" \
+          "$output_directory/leadership-summary.md" \
+          "$output_directory/leadership-summary.json"
+        do
+          if [[ ! -s "$report" ]]; then
+            echo "Expected repository health report was not generated: $report" >&2
+            exit 3
+          fi
+        done
+
+        RH_RUN_RESULT="$run_result" \
+        RH_REPORT_DIRECTORY="$output_directory" \
+        RH_ASSESSMENT_JSON="$assessment_json" \
+          python3 - "$GITHUB_OUTPUT" <<'PY'
+        import json
+        import math
+        import os
+        import sys
+        from pathlib import Path
+
+        result = json.loads(os.environ["RH_RUN_RESULT"])
+        required = (
+            "raw_score",
+            "effective_score",
+            "grade",
+            "maturity",
+            "cap_applied",
+            "assurance",
+        )
+        missing = [key for key in required if key not in result]
+        if missing:
+            raise SystemExit(f"Assessment result omitted required fields: {', '.join(missing)}")
+
+        for key in ("raw_score", "effective_score"):
+            value = float(result[key])
+            if not math.isfinite(value) or not 0 <= value <= 100:
+                raise SystemExit(f"Assessment returned an invalid {key}: {result[key]!r}")
+
+        report_directory = Path(os.environ["RH_REPORT_DIRECTORY"]).resolve()
+        assessment_json = Path(os.environ["RH_ASSESSMENT_JSON"]).resolve()
+        values = {
+            "report-directory": report_directory,
+            "assessment-json": assessment_json,
+            "health-assessment": report_directory / "health-assessment.md",
+            "leadership-summary": report_directory / "leadership-summary.md",
+            "leadership-summary-json": report_directory / "leadership-summary.json",
+            "raw-score": result["raw_score"],
+            "effective-score": result["effective_score"],
+            "grade": result["grade"],
+            "maturity": result["maturity"],
+            "cap-applied": result["cap_applied"],
+            "assurance": result["assurance"],
+        }
+
+        def output_value(value):
+            if isinstance(value, bool):
+                return str(value).lower()
+            if isinstance(value, (dict, list)):
+                return json.dumps(value, separators=(",", ":"), sort_keys=True)
+            return str(value)
+
+        output_path = Path(sys.argv[1])
+        with output_path.open("a", encoding="utf-8") as output:
+            for name, value in values.items():
+                rendered = output_value(value)
+                if "\n" in rendered or "\r" in rendered:
+                    raise SystemExit(f"Action output {name} unexpectedly contains a newline")
+                output.write(f"{name}={rendered}\n")
+        PY
+
+    - name: Publish leadership summary
+      if: ${{ always() && steps.assess.outcome == 'success' }}
+      shell: bash
+      env:
+        RH_LEADERSHIP_SUMMARY: ${{ steps.assess.outputs.leadership-summary }}
+      run: |
+        set -euo pipefail
+        if [[ -z "${GITHUB_STEP_SUMMARY:-}" ]]; then
+          echo "GITHUB_STEP_SUMMARY is not available." >&2
+          exit 4
+        fi
+        if [[ ! -s "$RH_LEADERSHIP_SUMMARY" ]]; then
+          echo "Leadership summary is missing or empty: $RH_LEADERSHIP_SUMMARY" >&2
+          exit 4
+        fi
+        printf '\n' >> "$GITHUB_STEP_SUMMARY"
+        cat "$RH_LEADERSHIP_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+        printf '\n' >> "$GITHUB_STEP_SUMMARY"
+
+branding:
+  icon: activity
+  color: blue

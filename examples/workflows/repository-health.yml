@@ -1,0 +1,65 @@
+# Copy this file to .github/workflows/repository-health.yml in the repository
+# being assessed. Replace YOUR-ORGANIZATION and the action ref with the owner and
+# immutable commit of the Repository Health Standard action. A release tag may
+# be used only when enterprise policy explicitly accepts mutable action refs.
+name: Repository health assessment
+
+on:
+  schedule:
+    # Weekly on Monday at 14:23 UTC. Use a locally appropriate off-hour minute.
+    - cron: '23 14 * * 1'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  checks: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: repository-health-${{ github.repository }}
+  cancel-in-progress: true
+
+jobs:
+  assess:
+    name: Assess repository health
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out complete repository history
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+
+      - name: Generate health and leadership reports
+        id: health
+        uses: YOUR-ORGANIZATION/repository-health-standard/.github/actions/repository-health@REPLACE_WITH_FULL_COMMIT_SHA
+        with:
+          config-path: .github/repository-health.toml
+          output-directory: repository-health-report
+          github-token: ${{ github.token }}
+
+      # The leadership-summary.md report is already appended to the run's job
+      # summary by the composite action. This explicit upload retains all reports.
+      #
+      # GitHub Enterprise Server: upload-artifact@v4 and later use a service not
+      # currently supported by GHES. Replace this step with the artifact mechanism
+      # supported by your GHES version; do not silently discard the reports.
+      - name: Upload repository health reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: repository-health-${{ github.run_id }}-${{ github.run_attempt }}
+          path: repository-health-report/
+          if-no-files-found: warn
+          retention-days: 90
+
+      # 0.1.0-draft is an improvement diagnostic, not a compliance or release
+      # gate. Low scores remain visible in the reports but do not fail this job.
