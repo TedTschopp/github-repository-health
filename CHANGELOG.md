@@ -21,6 +21,9 @@ All material changes to the Git Repository Health Standard are recorded here. Th
 - Conservative TOML configuration and evidence overrides with explicit Unknown and N/A handling.
 - Fail-closed configuration validation, whole-control N/A safeguards, and explicit dirty/non-Main source-state limitations.
 - Evidence-first leadership wording for Unknown controls and Markdown-safe rendering of repository-controlled text.
+- Required `Validate repository` check, active Main and immutable-version-tag rulesets, and protected pull-request ingress.
+- Rights, security, support, accountable ownership, CODEOWNERS, and private vulnerability-reporting records.
+- Revision-bound repeatable release builder, SPDX 2.3 SBOM, SHA-256 identity manifest, isolated GitHub Release workflow, and artifact attestation.
 
 ### Status
 
