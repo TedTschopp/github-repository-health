@@ -2,25 +2,34 @@ name: Repository health assessment
 
 on:
   schedule:
-    # Weekly on Monday at 13:17 UTC. The off-hour minute reduces scheduler congestion.
-    - cron: '17 13 * * 1'
+    # Daily at 13:17 UTC. Daily evidence is required for the W90 correspondence trend.
+    - cron: '17 13 * * *'
   workflow_dispatch:
 
-permissions:
-  actions: read
-  checks: read
-  contents: read
-  pull-requests: read
+# Each job declares its own trust-zone permissions. No job inherits a token scope.
+permissions: {}
 
 concurrency:
   group: repository-health-${{ github.repository }}
-  cancel-in-progress: true
+  # Serial publication makes an interrupted/racing append fail closed instead of
+  # cancelling the only run that may hold an unpublished evidence candidate.
+  cancel-in-progress: false
 
 jobs:
   assess:
     name: Assess repository health
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      actions: read
+      attestations: read
+      checks: read
+      contents: read
+      deployments: read
+      pages: read
+      pull-requests: read
+      security-events: read
+      statuses: read
 
     steps:
       - name: Check out complete repository history
@@ -42,8 +51,8 @@ jobs:
           output-directory: repository-health-report
           github-token: ${{ github.token }}
 
-      # The composite action deliberately does not upload artifacts. Retention is a
-      # workflow-owner decision, so this explicit step keeps that policy visible.
+      # This is both the ordinary 90-day report artifact and the checksummed,
+      # same-run transfer into the isolated history publisher.
       - name: Upload repository health reports
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -53,5 +62,458 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
-      # v0.1.0-draft is diagnostic and provisional. This workflow never fails
+      # v0.1.0-draft is diagnostic and provisional. This job never fails
       # because a score or grade is low; only execution or report errors fail it.
+
+  publish-history:
+    name: Append durable evidence history
+    needs: assess
+    if: ${{ needs.assess.result == 'success' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    # This job deliberately has no source checkout or Python setup and never
+    # invokes the assessed repository's build, test, deploy, hook, or application
+    # code. The protected workflow definition is executable trust-zone code; it
+    # accepts report data only through the checksummed artifact and publishes with
+    # runner-provided shell, isolated Python, jq, gh, and the Git Data API.
+    steps:
+      - name: Download checksummed report transfer
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: repository-health-${{ github.run_id }}-${{ github.run_attempt }}
+          path: repository-health-report
+
+      - name: Validate and append immutable evidence snapshot
+        shell: bash
+        env:
+          EVIDENCE_BRANCH: repository-health-evidence
+          EXPECTED_EVENT_NAME: ${{ github.event_name }}
+          EXPECTED_SOURCE_REF: ${{ github.ref }}
+          EXPECTED_SOURCE_SHA: ${{ github.sha }}
+          EXPECTED_WORKFLOW: ${{ github.workflow }}
+          EXPECTED_WORKFLOW_REF: ${{ github.workflow_ref }}
+          EXPECTED_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          GH_TOKEN: ${{ github.token }}
+          REPORT_DIRECTORY: repository-health-report
+        run: |
+          set -euo pipefail
+
+          cd "$REPORT_DIRECTORY"
+          required_files=(
+            repository-health-assessment.json
+            health-assessment.md
+            leadership-summary.md
+            leadership-summary.json
+            history-candidate.json
+          )
+          for file in "${required_files[@]}" HISTORY_SHA256SUMS; do
+            if [[ ! -f "$file" || -L "$file" || ! -s "$file" ]]; then
+              echo "History transfer file is missing, empty, or not a regular file: $file" >&2
+              exit 10
+            fi
+          done
+
+          # Refuse filenames, duplicates, and paths not owned by this transfer
+          # before allowing sha256sum to dereference anything from the manifest.
+          if ! awk '
+            BEGIN {
+              allowed["repository-health-assessment.json"] = 1
+              allowed["health-assessment.md"] = 1
+              allowed["leadership-summary.md"] = 1
+              allowed["leadership-summary.json"] = 1
+              allowed["history-candidate.json"] = 1
+            }
+            NF != 2 || length($1) != 64 || $1 !~ /^[0-9a-f]+$/ || !($2 in allowed) || seen[$2]++ { exit 1 }
+            END {
+              if (NR != 5) exit 1
+              for (name in allowed) if (!seen[name]) exit 1
+            }
+          ' HISTORY_SHA256SUMS; then
+            echo 'HISTORY_SHA256SUMS contains an unexpected, missing, or duplicate entry.' >&2
+            exit 10
+          fi
+          sha256sum --check --strict HISTORY_SHA256SUMS
+
+          candidate=history-candidate.json
+          if ! jq -e '
+            type == "object" and
+            .schema_version == "repository-health-evidence-snapshot/v1" and
+            .previous_snapshot_sha256 == null and
+            (.assessment | type == "object") and
+            (.documents | type == "array" and length == 4) and
+            (.provenance | type == "object")
+          ' "$candidate" >/dev/null; then
+            echo 'History candidate has an unsupported or incomplete structure.' >&2
+            exit 11
+          fi
+
+          assessment_id="$(jq -er '.assessment_id' "$candidate")"
+          generated_at="$(jq -er '.generated_at' "$candidate")"
+          repository="$(jq -er '.repository' "$candidate")"
+          snapshot_path="$(jq -er '.snapshot_path' "$candidate")"
+          if [[ ! "$assessment_id" =~ ^RHA-([0-9]{4})([0-9]{2})([0-9]{2})T([0-9]{2})([0-9]{2})([0-9]{2})Z-([0-9a-f]{8})-run([0-9]+)$ ]]; then
+            echo "Unsafe assessment identifier: $assessment_id" >&2
+            exit 11
+          fi
+          year="${BASH_REMATCH[1]}"
+          month="${BASH_REMATCH[2]}"
+          expected_generated_at="${BASH_REMATCH[1]}-${BASH_REMATCH[2]}-${BASH_REMATCH[3]}T${BASH_REMATCH[4]}:${BASH_REMATCH[5]}:${BASH_REMATCH[6]}+00:00"
+          expected_path="evidence/snapshots/$year/$month/$assessment_id.json"
+          if [[ "$generated_at" != "$expected_generated_at" || "$snapshot_path" != "$expected_path" || "${BASH_REMATCH[7]}" != "${EXPECTED_SOURCE_SHA:0:8}" || "${BASH_REMATCH[8]}" != "$GITHUB_RUN_ID" ]]; then
+            echo 'Assessment identity, timestamp, and controlled snapshot path disagree.' >&2
+            exit 11
+          fi
+          if [[ "$(date --utc --date="$generated_at" '+%Y-%m-%dT%H:%M:%S+00:00' 2>/dev/null)" != "$generated_at" ]]; then
+            echo 'Assessment timestamp is not a valid UTC calendar instant.' >&2
+            exit 11
+          fi
+          if [[ "$repository" != "$GITHUB_REPOSITORY" ]]; then
+            echo "Candidate repository does not match this run: $repository" >&2
+            exit 11
+          fi
+
+          expected_run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT"
+          if ! jq -e \
+            --arg assessment_id "$assessment_id" \
+            --arg generated_at "$generated_at" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --argjson run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg run_url "$expected_run_url" \
+            --arg event_name "$EXPECTED_EVENT_NAME" \
+            --arg source_ref "$EXPECTED_SOURCE_REF" \
+            --arg source_sha "$EXPECTED_SOURCE_SHA" \
+            --arg workflow "$EXPECTED_WORKFLOW" \
+            --arg workflow_ref "$EXPECTED_WORKFLOW_REF" \
+            --arg workflow_sha "$EXPECTED_WORKFLOW_SHA" '
+              .assessment_id == $assessment_id and
+              .generated_at == $generated_at and
+              .repository == $repository and
+              .assessment.assessment_id == $assessment_id and
+              .assessment.generated_at == $generated_at and
+              .assessment.repository.assessed_checkout_sha == $source_sha and
+              .assessment.automation.read_only_collection == true and
+              .assessment.automation.assessed_repository_build_code_executed == false and
+              .provenance.repository == $repository and
+              .provenance.run_id == $run_id and
+              .provenance.run_attempt == $run_attempt and
+              .provenance.run_url == $run_url and
+              .provenance.event_name == $event_name and
+              .provenance.source_ref == $source_ref and
+              .provenance.source_sha == $source_sha and
+              .provenance.workflow == $workflow and
+              .provenance.workflow_ref == $workflow_ref and
+              .provenance.workflow_sha == $workflow_sha
+            ' "$candidate" >/dev/null; then
+            echo 'Candidate identity or workflow provenance does not match this run.' >&2
+            exit 11
+          fi
+
+          for file in "${required_files[@]:0:4}"; do
+            expected_digest="$(jq -er --arg name "$file" '
+              [.documents[] | select(.name == $name)] |
+              if length == 1 then .[0].sha256 else error("missing or duplicate document") end
+            ' "$candidate")"
+            expected_size="$(jq -er --arg name "$file" '
+              [.documents[] | select(.name == $name)] |
+              if length == 1 then .[0].size else error("missing or duplicate document") end
+            ' "$candidate")"
+            actual_digest="$(sha256sum "$file" | awk '{print $1}')"
+            actual_size="$(stat --format='%s' "$file")"
+            if [[ ! "$expected_digest" =~ ^[0-9a-f]{64}$ || "$expected_digest" != "$actual_digest" || "$expected_size" != "$actual_size" ]]; then
+              echo "Candidate document metadata does not match $file." >&2
+              exit 11
+            fi
+          done
+
+          # The embedded assessment is the history payload. Validate both JSON
+          # inputs without duplicate keys or non-finite numbers, prove their
+          # canonical values are identical, and recompute the exact canonical
+          # digest used by the history packager before linking the snapshot.
+          if ! python3 -I - "$candidate" repository-health-assessment.json <<'PY'
+          import hashlib
+          import json
+          import math
+          from pathlib import Path
+          import re
+          import sys
+
+
+          def load_json(path, label):
+              def reject_duplicate_keys(pairs):
+                  value = {}
+                  for key, item in pairs:
+                      if key in value:
+                          raise ValueError(f"{label} contains duplicate JSON key {key!r}")
+                      value[key] = item
+                  return value
+
+              def reject_constant(value):
+                  raise ValueError(f"{label} contains non-finite JSON number {value}")
+
+              def finite_float(value):
+                  parsed = float(value)
+                  if not math.isfinite(parsed):
+                      raise ValueError(f"{label} contains an out-of-range JSON number {value}")
+                  return parsed
+
+              try:
+                  decoded = json.loads(
+                      Path(path).read_text(encoding="utf-8"),
+                      object_pairs_hook=reject_duplicate_keys,
+                      parse_constant=reject_constant,
+                      parse_float=finite_float,
+                  )
+              except (OSError, UnicodeError, ValueError) as error:
+                  raise SystemExit(str(error)) from error
+              if not isinstance(decoded, dict):
+                  raise SystemExit(f"{label} must be a JSON object")
+              return decoded
+
+
+          def canonical_bytes(value, label):
+              try:
+                  return json.dumps(
+                      value,
+                      allow_nan=False,
+                      ensure_ascii=False,
+                      separators=(",", ":"),
+                      sort_keys=True,
+                  ).encode("utf-8")
+              except (TypeError, ValueError, UnicodeError) as error:
+                  raise SystemExit(f"{label} cannot be canonicalized: {error}") from error
+
+
+          candidate = load_json(sys.argv[1], "history candidate")
+          assessment = load_json(sys.argv[2], "assessment report")
+          embedded = candidate.get("assessment")
+          if not isinstance(embedded, dict):
+              raise SystemExit("history candidate assessment must be a JSON object")
+
+          canonical_assessment = canonical_bytes(assessment, "assessment report")
+          canonical_embedded = canonical_bytes(embedded, "embedded history assessment")
+          if embedded != assessment or canonical_embedded != canonical_assessment:
+              raise SystemExit(
+                  "embedded history assessment differs from the transferred assessment report"
+              )
+
+          declared_digest = candidate.get("assessment_payload_sha256")
+          actual_digest = hashlib.sha256(canonical_assessment).hexdigest()
+          embedded_digest = hashlib.sha256(canonical_embedded).hexdigest()
+          if (
+              not isinstance(declared_digest, str)
+              or re.fullmatch(r"[0-9a-f]{64}", declared_digest) is None
+              or declared_digest != actual_digest
+              or declared_digest != embedded_digest
+          ):
+              raise SystemExit(
+                  "history assessment payload digest does not match canonical assessment JSON"
+              )
+          PY
+          then
+            echo 'History assessment payload validation failed.' >&2
+            exit 11
+          fi
+
+          api_error="$RUNNER_TEMP/repository-health-api-error"
+          branch_ref="repos/$GITHUB_REPOSITORY/git/ref/heads/$EVIDENCE_BRANCH"
+          branch_exists=false
+          branch_head=''
+          base_tree=''
+          if branch_json="$(gh api -H 'Accept: application/vnd.github+json' "$branch_ref" 2>"$api_error")"; then
+            branch_exists=true
+            branch_head="$(jq -er 'select(.object.type == "commit") | .object.sha' <<<"$branch_json")"
+            if [[ ! "$branch_head" =~ ^[0-9a-f]{40}$ ]]; then
+              echo 'Evidence branch does not resolve to a commit.' >&2
+              exit 12
+            fi
+            base_tree="$(gh api -H 'Accept: application/vnd.github+json' "repos/$GITHUB_REPOSITORY/git/commits/$branch_head" --jq '.tree.sha')"
+            if [[ ! "$base_tree" =~ ^[0-9a-f]{40}$ ]]; then
+              echo 'Evidence branch commit does not have a valid tree.' >&2
+              exit 12
+            fi
+          elif ! grep -q '(HTTP 404)' "$api_error"; then
+            cat "$api_error" >&2
+            exit 12
+          fi
+
+          previous_snapshot_sha256=''
+          if [[ "$branch_exists" == true ]]; then
+            latest_file="$RUNNER_TEMP/repository-health-latest.json"
+            latest_response="$RUNNER_TEMP/repository-health-latest-response.json"
+            gh api -H 'Accept: application/vnd.github+json' \
+              "repos/$GITHUB_REPOSITORY/contents/evidence/latest.json?ref=$EVIDENCE_BRANCH" \
+              > "$latest_response"
+            jq -er 'select(.type == "file" and .encoding == "base64") | .content' "$latest_response" \
+              | tr -d '\n' | base64 --decode > "$latest_file"
+
+            latest_id="$(jq -er 'select(.schema_version == "repository-health-evidence-latest/v1") | .assessment_id' "$latest_file")"
+            latest_generated_at="$(jq -er '.generated_at' "$latest_file")"
+            latest_repository="$(jq -er '.repository' "$latest_file")"
+            latest_path="$(jq -er '.snapshot_path' "$latest_file")"
+            latest_sha256="$(jq -er '.snapshot_sha256' "$latest_file")"
+            if [[ ! "$latest_id" =~ ^RHA-([0-9]{4})([0-9]{2})([0-9]{2})T([0-9]{2})([0-9]{2})([0-9]{2})Z-[0-9a-f]{8}-run[0-9]+$ ]]; then
+              echo 'Existing latest pointer has an unsafe assessment identifier.' >&2
+              exit 13
+            fi
+            expected_latest_path="evidence/snapshots/${BASH_REMATCH[1]}/${BASH_REMATCH[2]}/$latest_id.json"
+            expected_latest_generated_at="${BASH_REMATCH[1]}-${BASH_REMATCH[2]}-${BASH_REMATCH[3]}T${BASH_REMATCH[4]}:${BASH_REMATCH[5]}:${BASH_REMATCH[6]}+00:00"
+            if [[ "$latest_repository" != "$GITHUB_REPOSITORY" || "$latest_path" != "$expected_latest_path" || "$latest_generated_at" != "$expected_latest_generated_at" || ! "$latest_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+              echo 'Existing latest pointer is inconsistent with this repository or its controlled path.' >&2
+              exit 13
+            fi
+            if [[ "$(date --utc --date="$latest_generated_at" '+%Y-%m-%dT%H:%M:%S+00:00' 2>/dev/null)" != "$latest_generated_at" ]]; then
+              echo 'Existing latest pointer has an invalid UTC calendar instant.' >&2
+              exit 13
+            fi
+            if [[ "$latest_id" == "$assessment_id" || "$latest_generated_at" > "$generated_at" || "$latest_generated_at" == "$generated_at" ]]; then
+              echo 'Candidate is a duplicate or does not follow the current history timestamp.' >&2
+              exit 13
+            fi
+
+            previous_file="$RUNNER_TEMP/repository-health-previous.json"
+            previous_response="$RUNNER_TEMP/repository-health-previous-response.json"
+            gh api -H 'Accept: application/vnd.github+json' \
+              "repos/$GITHUB_REPOSITORY/contents/$latest_path?ref=$EVIDENCE_BRANCH" \
+              > "$previous_response"
+            jq -er 'select(.type == "file" and .encoding == "base64") | .content' "$previous_response" \
+              | tr -d '\n' | base64 --decode > "$previous_file"
+            previous_snapshot_sha256="$(sha256sum "$previous_file" | awk '{print $1}')"
+            if [[ "$previous_snapshot_sha256" != "$latest_sha256" ]]; then
+              echo 'Existing latest snapshot bytes do not match the latest-pointer digest.' >&2
+              exit 13
+            fi
+            if ! jq -e \
+              --slurpfile pointer "$latest_file" \
+              --arg id "$latest_id" \
+              --arg generated_at "$latest_generated_at" \
+              --arg repository "$latest_repository" \
+              --arg path "$latest_path" '
+                .schema_version == "repository-health-evidence-snapshot/v1" and
+                .assessment_id == $id and .assessment.assessment_id == $id and
+                .generated_at == $generated_at and .assessment.generated_at == $generated_at and
+                .repository == $repository and .provenance.repository == $repository and
+                .snapshot_path == $path and
+                .previous_snapshot_sha256 == $pointer[0].previous_snapshot_sha256
+              ' "$previous_file" >/dev/null; then
+              echo 'Existing latest snapshot conflicts with its pointer.' >&2
+              exit 13
+            fi
+
+            if gh api -H 'Accept: application/vnd.github+json' \
+              "repos/$GITHUB_REPOSITORY/contents/$snapshot_path?ref=$EVIDENCE_BRANCH" \
+              >/dev/null 2>"$api_error"; then
+              echo "Immutable snapshot path already exists: $snapshot_path" >&2
+              exit 13
+            elif ! grep -q '(HTTP 404)' "$api_error"; then
+              cat "$api_error" >&2
+              exit 13
+            fi
+          fi
+
+          final_snapshot="$RUNNER_TEMP/repository-health-snapshot.json"
+          link_line='  "previous_snapshot_sha256": null,'
+          if [[ "$(grep -Fxc "$link_line" "$candidate")" != '1' ]]; then
+            echo 'Candidate does not contain exactly one controlled history-link field.' >&2
+            exit 14
+          fi
+          if [[ -n "$previous_snapshot_sha256" ]]; then
+            # Replace only the controlled null link and preserve every other byte,
+            # including JSON numeric spelling covered by assessment_payload_sha256.
+            awk -v previous="$previous_snapshot_sha256" \
+              '$0 == "  \"previous_snapshot_sha256\": null," {
+                 print "  \"previous_snapshot_sha256\": \"" previous "\","; next
+               }
+               { print }' "$candidate" > "$final_snapshot"
+          else
+            cp "$candidate" "$final_snapshot"
+          fi
+          snapshot_sha256="$(sha256sum "$final_snapshot" | awk '{print $1}')"
+          latest_pointer="$RUNNER_TEMP/repository-health-new-latest.json"
+          jq -n --sort-keys \
+            --arg assessment_id "$assessment_id" \
+            --arg generated_at "$generated_at" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg snapshot_path "$snapshot_path" \
+            --arg snapshot_sha256 "$snapshot_sha256" \
+            --arg previous "$previous_snapshot_sha256" '
+              {
+                assessment_id: $assessment_id,
+                generated_at: $generated_at,
+                previous_snapshot_sha256: (if $previous == "" then null else $previous end),
+                repository: $repository,
+                schema_version: "repository-health-evidence-latest/v1",
+                snapshot_path: $snapshot_path,
+                snapshot_sha256: $snapshot_sha256
+              }
+            ' > "$latest_pointer"
+
+          create_blob() {
+            local file="$1"
+            jq -n --rawfile content "$file" '{content: $content, encoding: "utf-8"}' \
+              | gh api --method POST -H 'Accept: application/vnd.github+json' \
+                  "repos/$GITHUB_REPOSITORY/git/blobs" --input - --jq '.sha'
+          }
+          snapshot_blob="$(create_blob "$final_snapshot")"
+          latest_blob="$(create_blob "$latest_pointer")"
+          if [[ ! "$snapshot_blob" =~ ^[0-9a-f]{40}$ || ! "$latest_blob" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'GitHub did not return valid blob identities.' >&2
+            exit 14
+          fi
+
+          tree_request="$RUNNER_TEMP/repository-health-tree-request.json"
+          if [[ "$branch_exists" == true ]]; then
+            jq -n --arg base "$base_tree" --arg snapshot_path "$snapshot_path" \
+              --arg snapshot_blob "$snapshot_blob" --arg latest_blob "$latest_blob" '
+                {base_tree: $base, tree: [
+                  {path: $snapshot_path, mode: "100644", type: "blob", sha: $snapshot_blob},
+                  {path: "evidence/latest.json", mode: "100644", type: "blob", sha: $latest_blob}
+                ]}
+              ' > "$tree_request"
+          else
+            jq -n --arg snapshot_path "$snapshot_path" \
+              --arg snapshot_blob "$snapshot_blob" --arg latest_blob "$latest_blob" '
+                {tree: [
+                  {path: $snapshot_path, mode: "100644", type: "blob", sha: $snapshot_blob},
+                  {path: "evidence/latest.json", mode: "100644", type: "blob", sha: $latest_blob}
+                ]}
+              ' > "$tree_request"
+          fi
+          new_tree="$(gh api --method POST -H 'Accept: application/vnd.github+json' \
+            "repos/$GITHUB_REPOSITORY/git/trees" --input "$tree_request" --jq '.sha')"
+          if [[ ! "$new_tree" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'GitHub did not return a valid evidence-tree identity.' >&2
+            exit 14
+          fi
+
+          commit_request="$RUNNER_TEMP/repository-health-commit-request.json"
+          if [[ "$branch_exists" == true ]]; then
+            jq -n --arg tree "$new_tree" --arg parent "$branch_head" --arg id "$assessment_id" \
+              '{message: ("Append repository health evidence " + $id), tree: $tree, parents: [$parent]}' \
+              > "$commit_request"
+          else
+            jq -n --arg tree "$new_tree" --arg id "$assessment_id" \
+              '{message: ("Initialize repository health evidence " + $id), tree: $tree, parents: []}' \
+              > "$commit_request"
+          fi
+          new_commit="$(gh api --method POST -H 'Accept: application/vnd.github+json' \
+            "repos/$GITHUB_REPOSITORY/git/commits" --input "$commit_request" --jq '.sha')"
+          if [[ ! "$new_commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'GitHub did not return a valid evidence commit identity.' >&2
+            exit 14
+          fi
+
+          if [[ "$branch_exists" == true ]]; then
+            # force=false makes a stale head or non-fast-forward race fail closed.
+            jq -n --arg sha "$new_commit" '{sha: $sha, force: false}' \
+              | gh api --method PATCH -H 'Accept: application/vnd.github+json' \
+                  "repos/$GITHUB_REPOSITORY/git/refs/heads/$EVIDENCE_BRANCH" --input - >/dev/null
+          else
+            jq -n --arg ref "refs/heads/$EVIDENCE_BRANCH" --arg sha "$new_commit" '{ref: $ref, sha: $sha}' \
+              | gh api --method POST -H 'Accept: application/vnd.github+json' \
+                  "repos/$GITHUB_REPOSITORY/git/refs" --input - >/dev/null
+          fi
+          echo "Published immutable evidence snapshot $snapshot_path at commit $new_commit."

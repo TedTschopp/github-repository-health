@@ -58,6 +58,18 @@ outputs:
   assurance:
     description: Evidence-assurance result reported by the assessment engine.
     value: ${{ steps.assess.outputs.assurance }}
+  assessment-id:
+    description: Controlled identifier used for the immutable evidence snapshot.
+    value: ${{ steps.assess.outputs.assessment-id }}
+  history-candidate:
+    description: Absolute path to the validated, unlinked evidence-history candidate.
+    value: ${{ steps.assess.outputs.history-candidate }}
+  history-checksums:
+    description: Absolute path to the checksum manifest for the publisher transfer.
+    value: ${{ steps.assess.outputs.history-checksums }}
+  snapshot-path:
+    description: Controlled evidence-branch path reserved for this assessment snapshot.
+    value: ${{ steps.assess.outputs.snapshot-path }}
 
 runs:
   using: composite
@@ -75,10 +87,19 @@ runs:
         set -euo pipefail
 
         action_root="$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)"
+        workspace="${GITHUB_WORKSPACE:?GITHUB_WORKSPACE is required}"
         catalog_path="$action_root/docs/control-catalog.md"
-        repository_path="$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve())' "$RH_REPOSITORY_PATH")"
-        config_path="$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve())' "$RH_CONFIG_PATH")"
-        output_directory="$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve())' "$RH_OUTPUT_DIRECTORY")"
+        resolve_workspace_path() {
+          local value="$1"
+          if [[ "$value" == /* ]]; then
+            realpath --canonicalize-missing -- "$value"
+          else
+            realpath --canonicalize-missing -- "$workspace/$value"
+          fi
+        }
+        repository_path="$(resolve_workspace_path "$RH_REPOSITORY_PATH")"
+        config_path="$(resolve_workspace_path "$RH_CONFIG_PATH")"
+        output_directory="$(resolve_workspace_path "$RH_OUTPUT_DIRECTORY")"
         assessment_json="$output_directory/repository-health-assessment.json"
 
         if [[ ! -d "$repository_path" ]]; then
@@ -95,6 +116,28 @@ runs:
         fi
 
         mkdir -p "$output_directory"
+
+        # Import only the action's immutable package. Isolated mode removes the
+        # assessed repository, inherited PYTHONPATH, and user site packages from
+        # Python's import search path. The action root is inserted explicitly
+        # before dispatching the requested module.
+        run_action_module() {
+          local module="$1"
+          shift
+          python3 -I -c '
+        import runpy
+        import sys
+
+        action_root = sys.argv[1]
+        module = sys.argv[2]
+        arguments = sys.argv[3:]
+        sys.path.insert(0, action_root)
+        sys.argv = [module, *arguments]
+        runpy.run_module(module, run_name="__main__", alter_sys=True)
+        ' "$action_root" "$module" "$@"
+        }
+
+        cd "$action_root"
 
         github_repository="$RH_GITHUB_REPOSITORY_INPUT"
         if [[ -z "$github_repository" ]]; then
@@ -115,22 +158,40 @@ runs:
           assess_args+=(--github-token-env RH_GITHUB_TOKEN)
         fi
 
-        run_result="$(
-          PYTHONPATH="$action_root${PYTHONPATH:+:$PYTHONPATH}" \
-            python3 -m automation.repository_health "${assess_args[@]}"
-        )"
+        run_result="$(run_action_module automation.repository_health "${assess_args[@]}")"
         unset RH_GITHUB_TOKEN
 
-        PYTHONPATH="$action_root${PYTHONPATH:+:$PYTHONPATH}" \
-          python3 -m automation.repository_health.reporting \
+        run_action_module automation.repository_health.reporting \
             --assessment "$assessment_json" \
             --output-dir "$output_directory"
+
+        history_candidate="$output_directory/history-candidate.json"
+        history_checksums="$output_directory/HISTORY_SHA256SUMS"
+        history_result="$(
+          run_action_module automation.repository_health.history package \
+              --assessment "$assessment_json" \
+              --report-directory "$output_directory" \
+              --candidate "$history_candidate" \
+              --checksums "$history_checksums" \
+              --repository "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}" \
+              --workflow "${GITHUB_WORKFLOW:?GITHUB_WORKFLOW is required}" \
+              --workflow-ref "${GITHUB_WORKFLOW_REF:?GITHUB_WORKFLOW_REF is required}" \
+              --workflow-sha "${GITHUB_WORKFLOW_SHA:?GITHUB_WORKFLOW_SHA is required}" \
+              --source-ref "${GITHUB_REF:?GITHUB_REF is required}" \
+              --source-sha "${GITHUB_SHA:?GITHUB_SHA is required}" \
+              --run-id "${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}" \
+              --run-attempt "${GITHUB_RUN_ATTEMPT:?GITHUB_RUN_ATTEMPT is required}" \
+              --run-url "${GITHUB_SERVER_URL:?GITHUB_SERVER_URL is required}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}" \
+              --event-name "${GITHUB_EVENT_NAME:?GITHUB_EVENT_NAME is required}"
+        )"
 
         for report in \
           "$assessment_json" \
           "$output_directory/health-assessment.md" \
           "$output_directory/leadership-summary.md" \
-          "$output_directory/leadership-summary.json"
+          "$output_directory/leadership-summary.json" \
+          "$history_candidate" \
+          "$history_checksums"
         do
           if [[ ! -s "$report" ]]; then
             echo "Expected repository health report was not generated: $report" >&2
@@ -139,9 +200,10 @@ runs:
         done
 
         RH_RUN_RESULT="$run_result" \
+        RH_HISTORY_RESULT="$history_result" \
         RH_REPORT_DIRECTORY="$output_directory" \
         RH_ASSESSMENT_JSON="$assessment_json" \
-          python3 - "$GITHUB_OUTPUT" <<'PY'
+          python3 -I - "$GITHUB_OUTPUT" <<'PY'
         import json
         import math
         import os
@@ -149,6 +211,7 @@ runs:
         from pathlib import Path
 
         result = json.loads(os.environ["RH_RUN_RESULT"])
+        history = json.loads(os.environ["RH_HISTORY_RESULT"])
         required = (
             "raw_score",
             "effective_score",
@@ -160,6 +223,15 @@ runs:
         missing = [key for key in required if key not in result]
         if missing:
             raise SystemExit(f"Assessment result omitted required fields: {', '.join(missing)}")
+        history_required = (
+            "assessment_id",
+            "candidate_path",
+            "checksums_path",
+            "snapshot_path",
+        )
+        history_missing = [key for key in history_required if key not in history]
+        if history_missing:
+            raise SystemExit(f"History package omitted required fields: {', '.join(history_missing)}")
 
         for key in ("raw_score", "effective_score"):
             value = float(result[key])
@@ -180,6 +252,10 @@ runs:
             "maturity": result["maturity"],
             "cap-applied": result["cap_applied"],
             "assurance": result["assurance"],
+            "assessment-id": history["assessment_id"],
+            "history-candidate": history["candidate_path"],
+            "history-checksums": history["checksums_path"],
+            "snapshot-path": history["snapshot_path"],
         }
 
         def output_value(value):

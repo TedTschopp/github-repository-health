@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 from .catalog import Catalog, Control
 from .collectors import github_check_state, github_protection_state
@@ -25,6 +25,7 @@ ASSURANCE_ORDER = {"E0": 0, "E1": 1, "E2": 2, "E3": 3, "E4": 4}
 ASSURANCE_POINTS = {"E0": 0, "E1": 25, "E2": 50, "E3": 75, "E4": 100}
 CONFORMANCE_POINTS = {"Met": 100.0, "Partially met": 50.0, "Unmet": 0.0, "Unknown": 0.0, "N/A": None}
 ACTIVE_LIFECYCLES = {"Active", "Stable-supported", "Experimental", "Mirrored", "Unknown"}
+METRIC_BAND_ORDER = {"Pass": 0, "Concern": 1, "Fail": 2}
 
 # Full-control N/A is possible only where the catalog defines a complete
 # repository/unit exclusion. Item-level exclusions (for example one change
@@ -398,7 +399,140 @@ def _apply_override(control: Control, override: dict[str, Any]) -> dict[str, Any
     )
 
 
-def evaluate_controls(catalog: Catalog, config: dict[str, Any], local: dict[str, Any], github: dict[str, Any]) -> list[dict[str, Any]]:
+def _metric_value_text(metric: Mapping[str, Any]) -> str:
+    value = metric.get("value")
+    unit = metric.get("unit")
+    if value is None:
+        return str(metric.get("state", "unknown"))
+    return f"{value}{f' {unit}' if unit else ''}"
+
+
+def _metric_control_result(
+    control: Control,
+    metric_results: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
+    """Map versioned metric results to one control without adding score points."""
+
+    repository_metrics = {
+        str(item.get("metric_id")): dict(item)
+        for item in metric_results
+        if isinstance(item, Mapping) and item.get("unit_id") is None and item.get("metric_id")
+    }
+    selected = [repository_metrics[metric_id] for metric_id in control.measurement_ids if metric_id in repository_metrics]
+    if not selected:
+        return None
+    missing_metric_ids = [
+        metric_id for metric_id in control.measurement_ids if metric_id not in repository_metrics
+    ]
+    selected.extend(
+        {
+            "metric_id": metric_id,
+            "unit_id": None,
+            "state": "unknown",
+            "band": None,
+            "assurance": "E0",
+            "evidence_ids": [],
+            "limitations": [
+                f"Declared linked metric {metric_id} is missing from the assessment result."
+            ],
+            "conflicts": [],
+        }
+        for metric_id in missing_metric_ids
+    )
+
+    evidence_ids = list(
+        dict.fromkeys(
+            evidence_id
+            for metric in selected
+            for evidence_id in metric.get("evidence_ids", [])
+            if isinstance(evidence_id, str) and evidence_id
+        )
+    )
+    assurance = min(
+        (str(metric.get("assurance", "E0")) for metric in selected),
+        key=lambda level: ASSURANCE_ORDER.get(level, 0),
+    )
+    unknown = [metric for metric in selected if metric.get("state") == "unknown" or metric.get("band") is None and metric.get("state") != "n_a"]
+    applicable_metrics = [metric for metric in selected if metric.get("state") != "n_a"]
+    all_na = bool(selected) and not applicable_metrics
+    gate_status = None
+    gate_rationale = None
+
+    if unknown:
+        conformance = "Unknown"
+        assurance = min(assurance, "E0", key=ASSURANCE_ORDER.__getitem__)
+        details = []
+        for metric in unknown:
+            limitations = metric.get("limitations") or []
+            conflicts = metric.get("conflicts") or []
+            reason = next((str(item) for item in [*conflicts, *limitations] if item), "required evidence is incomplete")
+            details.append(f"{metric.get('metric_id')}: {reason}")
+        rationale = "Metric evidence is Unknown. " + " ".join(details)
+    elif all_na:
+        conformance = "N/A"
+        rationale = "Every linked metric has an evidence-backed N/A result."
+    else:
+        bands = [str(metric["band"]) for metric in applicable_metrics if metric.get("band") in METRIC_BAND_ORDER]
+        if len(bands) != len(applicable_metrics):
+            conformance = "Unknown"
+            assurance = "E0"
+            rationale = "One or more linked metrics omitted a usable threshold band."
+        else:
+            worst_band = max(bands, key=METRIC_BAND_ORDER.__getitem__)
+            conformance = {"Pass": "Met", "Concern": "Partially met", "Fail": "Unmet"}[worst_band]
+            rendered = "; ".join(
+                f"{metric.get('metric_id')}={metric.get('band')} ({_metric_value_text(metric)})"
+                for metric in applicable_metrics
+            )
+            rationale = f"Versioned measurement result: {rendered}."
+            if conformance == "Met" and ASSURANCE_ORDER.get(assurance, 0) < ASSURANCE_ORDER[control.minimum_assurance]:
+                conformance = "Unknown" if assurance == "E0" else "Partially met"
+                rationale += f" Evidence is below the {control.minimum_assurance} assurance floor for Met."
+
+    if control.gate:
+        current_metric_id = {
+            "G-01": "M-SPI-01",
+            "G-02": "M-SPI-02S",
+            "G-03": "M-CGD-01",
+            "G-04": "M-CGD-02",
+        }[control.gate]
+        current = repository_metrics.get(current_metric_id)
+        if not current or current.get("state") not in {"measured", "n_a"}:
+            gate_status = "Unknown"
+        elif current.get("state") == "n_a":
+            gate_status = "N/A"
+        elif current.get("band") == "Pass" and ASSURANCE_ORDER.get(str(current.get("assurance", "E0")), 0) >= ASSURANCE_ORDER["E3"]:
+            gate_status = "Pass"
+        elif current.get("band") in {"Concern", "Fail"}:
+            gate_status = "Fail"
+        else:
+            gate_status = "Unknown"
+        current_state = current.get("state") if current else "missing"
+        current_band = f" / {current.get('band')}" if current and current.get("band") else ""
+        current_assurance = current.get("assurance", "E0") if current else "E0"
+        gate_rationale = f"{current_metric_id} is {current_state}{current_band} at {current_assurance} assurance."
+
+    return (
+        _result(
+            conformance,
+            assurance,
+            rationale,
+            evidence_ids,
+            "measured",
+            gate_status,
+            gate_rationale,
+        ),
+        selected,
+    )
+
+
+def evaluate_controls(
+    catalog: Catalog,
+    config: dict[str, Any],
+    local: dict[str, Any],
+    github: dict[str, Any],
+    metric_results: Sequence[Mapping[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     facts = resolved_repository_facts(config, local)
     known_ids = {control.control_id for control in catalog.controls}
     extra_overrides = set(config.get("controls", {})) - known_ids
@@ -409,6 +543,7 @@ def evaluate_controls(catalog: Catalog, config: dict[str, Any], local: dict[str,
     for control in catalog.controls:
         applies, applicability_reason = applicability(control.control_id, facts)
         override = config.get("controls", {}).get(control.control_id)
+        metric_evaluation = _metric_control_result(control, metric_results or ()) if not override else None
         if override:
             catalog_exclusion = (
                 not applies
@@ -446,8 +581,26 @@ def evaluate_controls(catalog: Catalog, config: dict[str, Any], local: dict[str,
                 "A possible applicability exclusion is declared, but no approved evidence-backed N/A determination was supplied.",
                 ["E-CONFIG-CLASSIFICATION"],
             )
+        elif metric_evaluation is not None:
+            observed, selected_metrics = metric_evaluation
+            if observed["conformance"] == "N/A":
+                if control.control_id not in FULL_CONTROL_NA_ALLOWED:
+                    observed = _result(
+                        "Unknown",
+                        "E1",
+                        "The metric reported N/A, but this control does not permit a whole-control automatic exclusion.",
+                        observed["evidence_ids"],
+                        "measured",
+                        "Unknown" if control.gate else None,
+                    )
+                else:
+                    applies = False
+                    applicability_reason = "Evidence-backed machine N/A under the linked metric definition."
         else:
             observed = automatic_control_result(control, local, github, facts)
+
+        if metric_evaluation is None:
+            selected_metrics = []
 
         content_evidence = {"E-LOCAL-DOCS", "E-LOCAL-WORKFLOWS", "E-LOCAL-DEPS"}
         exact_main_content = local.get("working_tree_clean") is True and local.get("head_is_main") is True
@@ -482,6 +635,7 @@ def evaluate_controls(catalog: Catalog, config: dict[str, Any], local: dict[str,
                 "gate_status": observed.get("gate_status"),
                 "gate_rationale": observed.get("gate_rationale"),
                 "measurement_ids": list(control.measurement_ids),
+                "measurement_results": selected_metrics,
                 "source_ids": list(control.source_ids),
             }
         )

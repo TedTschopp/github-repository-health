@@ -14,9 +14,9 @@ The automation follows one governing rule: **absence of evidence is Unknown, not
 
 ### Run this standards repository
 
-This repository already contains the local composite action, declaration, and scheduled workflow. After the files are committed to the default branch, enable GitHub Actions and either wait for the weekly schedule or start **Repository health assessment** from the Actions page with `workflow_dispatch`.
+This repository already contains the local composite action, declaration, and scheduled workflow. After the files are committed to the default branch, enable GitHub Actions and either wait for the daily schedule or start **Repository health assessment** from the Actions page with `workflow_dispatch`.
 
-The scheduled workflow is [.github/workflows/repository-health.yml](../.github/workflows/repository-health.yml). It invokes the action in [.github/actions/repository-health/action.yml](../.github/actions/repository-health/action.yml) and reads [.github/repository-health.toml](../.github/repository-health.toml).
+The scheduled workflow is [.github/workflows/repository-health.yml](../.github/workflows/repository-health.yml). It invokes the action in [.github/actions/repository-health/action.yml](../.github/actions/repository-health/action.yml) and reads [.github/repository-health.toml](../.github/repository-health.toml). When present, production and workflow-evidence policy files are read from the exact assessed Main revision rather than the working tree.
 
 ### Use a centrally maintained action
 
@@ -56,7 +56,12 @@ Local collection does not call GitHub unless a repository identity and token are
 flowchart LR
     A["Repository files and Git history"] --> C["Read-only evidence collector"]
     B["GitHub APIs and repository configuration"] --> C
-    C --> D["35-control evaluator"]
+    P["Exact-Main production and evidence policies"] --> C
+    W["Existing outcome workflows"] --> X["Schema-bound evidence artifacts"]
+    X --> C
+    C --> N["Fail-closed evidence normalizer"]
+    N --> M["Versioned metric calculations"]
+    M --> D["35-control evaluator"]
     D --> E["Structured assessment JSON"]
     E --> F["Detailed health assessment"]
     E --> G["Leadership summary"]
@@ -72,8 +77,9 @@ The package contains:
 - A scheduled and manually triggered workflow under `.github/workflows/`.
 - A consumer workflow example under `examples/workflows/`.
 - A conservative TOML configuration whose defaults create Unknown results rather than invented assurance.
+- A bounded evidence producer, exact-Main authorization policy, deterministic Actions-run selector, and untrusted-artifact collector.
 
-No collector executes repository-owned build, test, deployment, or remediation commands. Existing CI and delivery systems remain responsible for producing those results; the collector reads the evidence they retain.
+No collector invokes the assessed repository's build, test, deployment, hook, application, or remediation commands. Existing CI and delivery systems remain responsible for producing those results; the collector reads the evidence they retain.
 
 ## 2. Generated reports
 
@@ -123,10 +129,15 @@ Depending on token access and repository configuration, the action can observe:
 - Git history, branch and tag inventory, activity, and contributor count;
 - repository files such as README, ownership, support, security, contribution, license, changelog, dependency, lock, and workflow files;
 - GitHub repository and default-branch metadata;
-- workflow definitions, exact-revision check results, recent pull requests, releases, tags, and visible branch/ruleset protection state; and
+- workflow definitions and every statically visible `uses` dependency, including recursively referenced local actions;
+- exact-revision check results plus paginated Actions runs, attempts, and jobs over the metric windows;
+- Main commits, associated pull requests, reviews, actors, final revisions, releases, remote refs, tag objects, release assets, deployments, environments, attestations, and visible security results;
+- effective branch rules, ruleset details, and visible branch-protection state; and
 - explicit, evidence-backed repository profile and control inputs from the TOML file.
 
-These observations do not automatically prove production state, effective bypass behavior, release provenance, vulnerability disposition, operational recovery, or portfolio uniqueness.
+Collectors retain population completeness, pagination, source, exact-SHA binding, and every inaccessible endpoint. The normalizer then creates metric-specific assertions only when the required classifications can be made without guessing. These observations do not automatically prove production state, effective bypass behavior, release provenance, vulnerability disposition, operational recovery, or portfolio uniqueness.
+
+The assessment contains one repository-level result for each implemented metric and a result for each declared deployable unit. Repository aggregation uses the worst applicable unit; an Unknown unit makes the repository result Unknown. The detailed Markdown report shows state, threshold band, value, assurance, sample class, coverage, evidence IDs, and limitations before the control table.
 
 ### 3.2 Evidence that normally requires another system
 
@@ -145,13 +156,30 @@ Use a control override only when the referenced evidence meets the catalog requi
 
 ### 3.3 Inaccessible GitHub evidence
 
-The workflow's normal `GITHUB_TOKEN` is intentionally read-only and repository-scoped. Some detailed protection and administration endpoints require permissions that the standard workflow token does not provide. A `403` or `404` is recorded as an evidence gap, never interpreted as an absent or passing control.
+The workflow's normal `GITHUB_TOKEN` is intentionally read-only and repository-scoped. Some detailed protection, secret-scanning, membership, and administration endpoints require permissions that the standard workflow token does not provide. A `403` or `404` is recorded as an evidence gap, never interpreted as an absent or passing control. A successful empty page counts as No Events only when the complete eligible population and the measurement dictionary's carry rule are both established.
 
 Organizations that require deeper configuration evidence should use a narrowly scoped GitHub App or fine-grained token under their credential policy. Supplying a more privileged token expands visibility; it does not grant the action permission to change repository state.
+
+### 3.4 Schema-bound workflow evidence
+
+Existing validation, security, release, and deployment workflows can package their explicit result with the [Evidence Producer](evidence-producer.md). The assessor does not search arbitrary artifacts or trust a producer statement by itself. It first loads `.github/repository-health-evidence-policy.json` from the exact assessed Main commit. That policy authorizes one controlled workflow, event set, evidence kind, exact category set, and subject source for each unit.
+
+The Actions collector supplies a versioned population contract. For `assessed-main`, the current scheduled assessment requires a complete Main branch window. For `production-unit`, a complete targeted exact-subject population is required; the Main-only collection does not satisfy that requirement. Within a covered population, the selector chooses the one uniquely newest completed run whose workflow, event, ref, and SHA match the policy and whose run ID and attempt are valid positive integers. Missing policy, inaccessible or capped pages, an uncovered subject, an ambiguous newest run, or an artifact-name collision yields Unknown.
+
+Only the exact `repository-health-evidence--<unit_id>` artifact is downloaded for an eligible run/unit pair. The collector treats the ZIP as untrusted, verifies its bounded two-file package, then independently joins repository, unit, subject, workflow, run, result source, artifact identity, and category policy to authoritative records. Collector-owned statement verifications are generated only inside that invocation; a repository cannot supply a verification object to authenticate itself.
+
+The integrated assessor records selection, candidate packages, verifications, and gaps under `facts.github.produced_evidence` and in the evidence inventory. A fully verified statement can support E3 for that evidence record, but the statement still does not change a measure, control rating, foundational gate, or score. That requires a separate controlled resolver for the exact metric and source population. This boundary prevents a successful job label from becoming a broad self-attested pass.
 
 ## 4. Repository configuration
 
 The default location is `.github/repository-health.toml`. The evaluator requires Python 3.11 or newer because it uses the standard-library TOML parser.
+
+Two optional machine-readable contracts complement the TOML configuration:
+
+- `.github/repository-health-production.json` declares exact per-unit selectors using legacy `RH-PRODUCTION-IDENTITY-1.0` or generic `RH-PRODUCTION-IDENTITY-2.0`. See [Production Identity and Delivery Resolution](production-identity.md).
+- `.github/repository-health-evidence-policy.json` authorizes schema-bound workflow evidence using `RH-EVIDENCE-POLICY-1.0`.
+
+The evaluator reads both from the exact Main Git object. A dirty working-tree edit or policy present only on the assessment branch cannot affect selection. A missing, malformed, contradictory, or unsupported contract is reported as an evidence limitation and cannot establish a pass.
 
 ```toml
 [standard]
@@ -241,7 +269,13 @@ n_a_review_date = "2026-11-07"
 
 The assessor remains responsible for confirming that the catalog actually permits N/A for the stated scope.
 
-### 4.2 Optional DORA outcome input
+### 4.2 Production identity integration boundary
+
+The legacy release profile remains supported for this standards repository. The generic v2 validator supports application deployments, packages, GitOps refs, documentation publication, approved no-current-output decisions, and archive/retirement dispositions without inferring a methodology from a branch name.
+
+Generic v2 is currently groundwork, not an alternate route to a G-02 pass. A selector-bound collector can construct resolver-ready facts for controlled application deployments, package releases, GitOps refs, and GitHub Pages publications, and the pure fail-closed delivery resolver is available for controlled integration testing. The assessment engine does not yet map that complete type-specific delivery and evidence path into `M-SPI-02S` or the score. A syntactically valid selector, successful deployment status, governance declaration, or producer statement therefore remains insufficient by itself. Unsupported or incomplete adapters remain Unknown.
+
+### 4.3 Optional DORA outcome input
 
 DORA inputs are accepted only as a complete, separately evidenced service-level panel. They never affect repository scoring.
 
@@ -322,17 +356,20 @@ Within a priority class, the renderer favors the action that removes the broades
 
 ## 6. GitHub Actions operating model
 
-The provided workflow runs weekly at a minute offset from the top of the hour and can also be started manually. It:
+The standards repository's provided workflow runs daily at a minute offset from the top of the hour and can also be started manually. Daily snapshots support measures that require a W90 daily correspondence population. The conservative consumer example remains weekly until its owner deliberately installs an approved durable-history publisher and records policy. The provided workflow:
 
 1. checks out full Git history without retaining write credentials;
 2. selects a supported Python runtime;
 3. runs the read-only composite action;
-4. appends the leadership brief to the GitHub run summary; and
-5. uploads all four reports as a retained workflow artifact.
+4. appends the leadership brief to the GitHub run summary;
+5. uploads the four reports and their evidence-history transfer records as a 90-day workflow artifact; and
+6. passes that checksummed artifact to an isolated publisher that appends the assessment to a durable evidence branch.
 
 The action fails only when configuration, catalog parsing, collection, evaluation, or report generation cannot complete. It does **not** fail because a repository has a low score or a foundational weakness. Provisional 0.1.0-draft results must not be used as a release or compliance gate.
 
 Scheduled workflows run from the default branch and may be delayed during periods of GitHub Actions load. Use the manual trigger for an immediate reassessment after material remediation.
+
+The supplied repository publishes durable history only when the assessed workflow ref is `refs/heads/main`. A manual run on another branch may produce the ordinary diagnostic artifact, but it cannot enter the privileged publisher. Repositories whose Main role uses another branch name must change that condition deliberately when installing the workflow.
 
 GitHub documents that scheduled workflows run on the default branch and can be delayed during high-load periods, especially near the start of the hour. See [Events that trigger workflows](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule).
 
@@ -346,23 +383,41 @@ GitHub documents that scheduled workflows run on the default branch and can be d
 | `github-repository` | Current `${{ github.repository }}` | Optional `owner/name` override. |
 | `github-token` | Empty | Read-only token for visible GitHub evidence. The example passes `${{ github.token }}`. |
 
-The action exposes report paths plus raw/effective score, grade, maturity, active-cap state, and assurance as outputs. It appends only the leadership Markdown to `GITHUB_STEP_SUMMARY`; artifact upload and retention remain explicit workflow-owner decisions. GitHub job summaries are backed by the per-step `GITHUB_STEP_SUMMARY` file; see [Adding a job summary](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/workflow-commands-for-github-actions#adding-a-job-summary).
+The action exposes report paths plus raw/effective score, grade, maturity, active-cap state, assurance, assessment ID, history-candidate path, checksum path, and controlled snapshot path as outputs. It appends only the leadership Markdown to `GITHUB_STEP_SUMMARY`; artifact upload and retention remain explicit workflow-owner decisions. GitHub job summaries are backed by the per-step `GITHUB_STEP_SUMMARY` file; see [Adding a job summary](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/workflow-commands-for-github-actions#adding-a-job-summary).
 
 ### 6.2 Token permissions and inaccessible settings
 
-The example workflow grants `actions: read`, `checks: read`, `contents: read`, and `pull-requests: read`. The automatic `GITHUB_TOKEN` is repository-scoped and expires when the job ends. See [Automatic token authentication](https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication).
+The workflow grants no permissions at workflow scope. Its assessor job receives only `actions: read`, `attestations: read`, `checks: read`, `contents: read`, `deployments: read`, `pages: read`, `pull-requests: read`, `security-events: read`, and `statuses: read`. These are read scopes; inaccessible products and endpoints remain Unknown. Its separate history-publisher job receives only `contents: write`; it has no assessed-source checkout or Python setup and does not invoke assessed build, test, deploy, hook, or application code. The protected workflow definition remains executable trust-zone code. The automatic `GITHUB_TOKEN` is repository-scoped and expires when each job ends. See [Automatic token authentication](https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication).
 
 GitHub's detailed branch-protection endpoint requires administration read permission. The normal workflow does not elevate itself to obtain that access; an inaccessible response remains Unknown. See [Branch protection REST API](https://docs.github.com/en/rest/branches/branch-protection#get-branch-protection).
 
+### 6.3 Durable evidence history
+
+The ordinary workflow artifact remains available for 90 days and contains the detailed assessment, both leadership reports, the machine-readable leadership summary, `history-candidate.json`, and `HISTORY_SHA256SUMS`. The checksum manifest names only those controlled transfer files. Before publication, the writer rejects missing files, symlinks, unexpected manifest paths, duplicate entries, digest or size mismatches, unsafe assessment IDs, path traversal, and provenance that does not identify the current workflow run and assessed revision.
+
+Durable records live on the dedicated `repository-health-evidence` branch, separate from Main and product source; its first publication may create a root commit with no Main parent. Each successful run adds exactly one snapshot at:
+
+```text
+evidence/snapshots/YYYY/MM/<assessment_id>.json
+```
+
+The snapshot embeds the machine-readable assessment, report digests and sizes, source and workflow commit identities, run identity and URL, and the SHA-256 digest of the preceding snapshot's exact bytes. `evidence/latest.json` points to the current snapshot and repeats its exact byte digest. A reader can therefore detect a changed snapshot, a missing link, a duplicate identity, an orphaned/conflicting record, or a latest pointer that disagrees with the chain. Run `python3 -m automation.repository_health.history validate <checked-out-evidence-branch>` for an offline validation; it performs no network calls.
+
+The publisher obtains the current evidence-branch head, refuses an existing snapshot path, creates the snapshot and latest pointer in one Git tree, and advances the ref with `force: false`. A stale head, concurrent write, non-fast-forward update, malformed history tip, or API ambiguity fails the run without replacing history. Protect the evidence branch from force pushes, deletion, and writes by actors other than the designated workflow; the hash chain detects mutation but does not prevent an independently authorized administrator from rewriting Git history.
+
+Repository and organization Actions policy must permit the job's requested `contents: write` scope. If it does not, publication fails closed and the 90-day report artifact remains available for investigation; the workflow does not fall back to a broader personal token.
+
+This layout also provides the W365 measurement-history path. Before calculating trends, the read-only assessor resolves the evidence-branch commit and tree through the Git Data API, loads controlled snapshot paths within bounded byte/count limits, validates the latest pointer and every link in the selected segment, and only then supplies prior assessments to the normalizer. When the branch contains more than the bounded download population, the first selected snapshot's predecessor digest is retained as an opaque anchor: the assessor may establish a complete daily W365 window without claiming that the older prefix or an all-time chain was validated. A missing evidence branch is recorded as complete `no_history`, not as passing history; an inaccessible, partial, oversized, malformed, internally gapped, or conflicting selected segment supplies no snapshots and leaves dependent trends Unknown. The offline reader applies full-chain validation to a checked-out evidence branch.
+
 ## 7. Security and privacy
 
-- Keep workflow permissions read-only and grant only the evidence scopes in use.
+- Keep workflow-level permissions empty, keep assessment scopes read-only, protect the workflow definition, and isolate the single `contents: write` history append in a job that never checks out the assessed tree or invokes assessed build, test, deploy, hook, or application code. For stronger separation, move publication to a centrally owned pinned workflow or a GitHub App credential constrained to the evidence branch.
 - Prefer a GitHub App or fine-grained token over a broadly scoped personal token when additional evidence access is required.
 - Pin external actions to reviewed immutable revisions.
 - Do not place secrets, confidential logs, regulated data, or raw vulnerability details in configuration, workflow summaries, or artifacts.
 - Store evidence references and immutable identifiers rather than sensitive evidence copies.
 - Treat repository files and API responses as untrusted input when rendering Markdown; the reporter escapes or normalizes unsafe content.
-- Set artifact retention to the minimum period required by the assessment and records policy.
+- Apply records policy independently to the 90-day report artifact and durable evidence branch; do not assume Git branch retention replaces an approved records schedule.
 
 ## 8. Interpretation and limitations
 

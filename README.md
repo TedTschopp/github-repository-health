@@ -28,7 +28,10 @@ The central contract is simple:
 | Calculate or interpret a measure | [Measurement Dictionary](docs/measurement-dictionary.md) |
 | Calculate the grade and evidence confidence | [Scoring, Assurance, and Exceptions](docs/scoring-assurance-exceptions.md) |
 | Conduct a manual assessment | [Assessment Guide](docs/assessment-guide.md) |
+| Make and record the 41 repository-governance decisions | [Repository Governance Decision Guide](docs/repository-governance-decision-guide.md) |
 | Run a recurring automated assessment | [Automated Assessment Guide](docs/automation-guide.md) |
+| Package results from existing CI, security, release, or deployment jobs | [Evidence Producer](docs/evidence-producer.md) |
+| Declare per-unit production selectors and understand delivery-resolution boundaries | [Production Identity and Delivery Resolution](docs/production-identity.md) |
 | Integrate or exchange assessment artifacts consistently | [Documentation Artifact Schemas](docs/artifact-schemas.md) |
 | Run or govern the controlled pilot | [Governance and Pilot](docs/governance-and-pilot.md) |
 | Prepare the real pilot cohort | [Field Pilot Package](pilot/README.md) |
@@ -62,16 +65,20 @@ Version 0.1.0-draft is a provisional documentation baseline. Its formulas and fi
 
 The repository now includes a read-only assessment engine and GitHub composite action. A scheduled run produces:
 
-- `repository-health-assessment.json`, containing facts, evidence, all 35 control results, dimensions, gates, score, assurance, findings, limitations, and the separate DORA panel;
+- `repository-health-assessment.json`, containing facts, versioned repository/unit measurements, evidence, all 35 control results, dimensions, gates, score, assurance, findings, limitations, and the separate DORA panel;
 - `health-assessment.md`, for engineers and repository owners;
 - `leadership-summary.md`, written for a nontechnical audience with up to seven next actions in priority order; and
 - `leadership-summary.json`, for later portfolio aggregation.
 
-Start with the [Automated Assessment Guide](docs/automation-guide.md), the local [scheduled workflow](.github/workflows/repository-health.yml), and the [consumer workflow example](examples/workflows/repository-health.yml). Repository-specific applicability and evidence references live in `.github/repository-health.toml`.
+Start with the [Automated Assessment Guide](docs/automation-guide.md), the local [scheduled workflow](.github/workflows/repository-health.yml), and the [consumer workflow example](examples/workflows/repository-health.yml). Repository-specific applicability and evidence references live in `.github/repository-health.toml`. Production selectors live in `.github/repository-health-production.json`, and authorization to inspect schema-bound workflow evidence lives in `.github/repository-health-evidence-policy.json`; both are read from the exact assessed Main revision.
+
+The scheduled assessor paginates GitHub evidence, preserves inaccessible or partial populations as Unknown, and converts only defensible exact-SHA, release, ruleset, change, and CI observations into measurement results. A separate minimal-write job appends the completed assessment to the hash-linked `repository-health-evidence` branch; it does not check out the assessed tree or invoke assessed build, test, deploy, hook, or application code. Its protected workflow definition is executable trust-zone code.
+
+Existing workflows can emit bounded evidence packages for validation, security, release, and deployment outcomes. A Main-bound policy selects only an unambiguous completed run for an exact subject and unit, after which the collector validates the package and joins its claims to authoritative GitHub records. Verified statements appear in the assessment evidence inventory for audit, but they do not change a metric, control, gate, or score until a controlled metric-specific resolver maps the exact category and source population. Missing policy, incomplete populations, ambiguous runs, unsupported sources, or conflicts remain Unknown.
 
 Version tags invoke the separate [attested release workflow](.github/workflows/release.yml). It publishes a revision-bound source package, SPDX SBOM, source-identity record, checksum manifest, and GitHub artifact-attestation bundle only after the tagged revision is proven reachable from Main and validated by the authoritative check. The [release and production correspondence record](docs/release-and-production.md) identifies the current supported published unit and its exact evidence chain.
 
-The automation never treats an inaccessible setting or missing record as healthy. It does not execute repository-owned code, change settings, remediate findings, deploy software, or fail a workflow because the provisional grade is low. GitHub-only evidence cannot fully prove production, operational, security, or portfolio controls; those remain Unknown until acceptable evidence is connected or supplied.
+The automation never treats an inaccessible setting or missing record as healthy. It runs only the pinned assessment engine and read-only Git operations; it does not invoke the assessed repository's build, test, deploy, hook, or application code, change settings, remediate findings, deploy software, or fail a workflow because the provisional grade is low. GitHub-only evidence cannot fully prove production, operational, security, or portfolio controls; those remain Unknown until acceptable evidence is connected or supplied.
 
 ## Security, support, ownership, and rights
 

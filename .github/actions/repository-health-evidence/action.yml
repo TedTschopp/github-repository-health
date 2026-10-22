@@ -1,0 +1,194 @@
+name: Repository Health Evidence Statement
+description: Package an already-observed job outcome as strict JSON evidence; does not run assessed work.
+author: Enterprise Architecture
+
+inputs:
+  unit-id:
+    description: Controlled deployable or publishable unit identifier for this evidence.
+    required: true
+  kind:
+    description: 'Explicit evidence kind: validation, security, release, or deployment.'
+    required: true
+  result:
+    description: 'Explicit caller-observed result: success, failure, or unknown.'
+    required: true
+  categories-json:
+    description: Non-empty JSON array of controlled category identifiers.
+    required: true
+  subject-digests-json:
+    description: Non-empty JSON array of SHA-256 digest records for the assessed source subject.
+    required: true
+  artifact-digests-json:
+    description: JSON array of SHA-256 artifact digest records; required for release/deployment success.
+    required: false
+    default: '[]'
+  source-evidence-ids-json:
+    description: Non-empty JSON array of IDs for the caller evidence supporting the stated result.
+    required: true
+  observed-at:
+    description: Optional offset-aware ISO 8601 observation time; defaults to producer execution time.
+    required: false
+    default: ''
+  output-directory:
+    description: Workspace-relative directory for the statement and manifest.
+    required: false
+    default: repository-health-evidence
+  upload-artifact:
+    description: Upload the two evidence files when exactly true.
+    required: false
+    default: 'false'
+  retention-days:
+    description: Artifact retention from 1 through 90 days.
+    required: false
+    default: '30'
+
+outputs:
+  statement-id:
+    description: Content-addressed ID of the validated evidence statement.
+    value: ${{ steps.produce.outputs.statement-id }}
+  evidence-json:
+    description: Absolute path to the canonical evidence JSON.
+    value: ${{ steps.produce.outputs.evidence-json }}
+  sha256-manifest:
+    description: Absolute path to the strict SHA-256 manifest.
+    value: ${{ steps.produce.outputs.sha256-manifest }}
+  evidence-sha256:
+    description: SHA-256 of the exact evidence JSON bytes.
+    value: ${{ steps.produce.outputs.evidence-sha256 }}
+
+runs:
+  using: composite
+  steps:
+    - name: Package caller-supplied evidence
+      id: produce
+      shell: bash
+      env:
+        RH_EVIDENCE_KIND: ${{ inputs.kind }}
+        RH_UNIT_ID: ${{ inputs.unit-id }}
+        RH_EVIDENCE_RESULT: ${{ inputs.result }}
+        RH_CATEGORIES_JSON: ${{ inputs.categories-json }}
+        RH_SUBJECT_DIGESTS_JSON: ${{ inputs.subject-digests-json }}
+        RH_ARTIFACT_DIGESTS_JSON: ${{ inputs.artifact-digests-json }}
+        RH_SOURCE_EVIDENCE_IDS_JSON: ${{ inputs.source-evidence-ids-json }}
+        RH_OBSERVED_AT: ${{ inputs.observed-at }}
+        RH_OUTPUT_DIRECTORY: ${{ inputs.output-directory }}
+        RH_UPLOAD_ARTIFACT: ${{ inputs.upload-artifact }}
+        RH_RETENTION_DAYS: ${{ inputs.retention-days }}
+      run: |
+        set -euo pipefail
+
+        action_root="$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)"
+        workspace="$(realpath -- "${GITHUB_WORKSPACE:?GITHUB_WORKSPACE is required}")"
+        if [[ "$RH_OUTPUT_DIRECTORY" == *$'\n'* || "$RH_OUTPUT_DIRECTORY" == *$'\r'* ]]; then
+          echo "output-directory must not contain line breaks" >&2
+          exit 2
+        fi
+        output_directory="$(realpath --canonicalize-missing -- "$workspace/$RH_OUTPUT_DIRECTORY")"
+        case "$output_directory" in
+          "$workspace"/*) ;;
+          *)
+            echo "output-directory must resolve inside GITHUB_WORKSPACE" >&2
+            exit 2
+            ;;
+        esac
+        if [[ "$RH_UPLOAD_ARTIFACT" != "true" && "$RH_UPLOAD_ARTIFACT" != "false" ]]; then
+          echo "upload-artifact must be exactly true or false" >&2
+          exit 2
+        fi
+        if [[ ! "$RH_RETENTION_DAYS" =~ ^[1-9][0-9]?$ || "$RH_RETENTION_DAYS" -gt 90 ]]; then
+          echo "retention-days must be from 1 through 90" >&2
+          exit 2
+        fi
+
+        mkdir -p "$output_directory"
+        evidence_json="$output_directory/evidence-statement.json"
+        manifest="$output_directory/SHA256SUMS"
+
+        # Isolated mode prevents consumer PYTHONPATH or user site packages from
+        # shadowing the reviewed producer. run_path also avoids importing the
+        # larger assessment package. No repository build/test/deploy code is
+        # imported or executed by this launcher.
+        run_producer() {
+          python3 -I -c '
+        import os
+        import runpy
+        import sys
+
+        action_root = sys.argv[1]
+        arguments = sys.argv[2:]
+        producer = os.path.join(
+            action_root,
+            "automation",
+            "repository_health",
+            "evidence_producer.py",
+        )
+        sys.argv = [producer, *arguments]
+        runpy.run_path(producer, run_name="__main__")
+        ' "$action_root" "$@"
+        }
+
+        create_args=(
+          create
+          --repository "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
+          --unit-id "$RH_UNIT_ID"
+          --subject-ref "${GITHUB_REF:?GITHUB_REF is required}"
+          --subject-sha "${GITHUB_SHA:?GITHUB_SHA is required}"
+          --subject-digests-json "$RH_SUBJECT_DIGESTS_JSON"
+          --workflow-ref "${GITHUB_WORKFLOW_REF:?GITHUB_WORKFLOW_REF is required}"
+          --workflow-sha "${GITHUB_WORKFLOW_SHA:?GITHUB_WORKFLOW_SHA is required}"
+          --run-id "${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}"
+          --run-attempt "${GITHUB_RUN_ATTEMPT:?GITHUB_RUN_ATTEMPT is required}"
+          --kind "$RH_EVIDENCE_KIND"
+          --result "$RH_EVIDENCE_RESULT"
+          --categories-json "$RH_CATEGORIES_JSON"
+          --artifact-digests-json "$RH_ARTIFACT_DIGESTS_JSON"
+          --source-evidence-ids-json "$RH_SOURCE_EVIDENCE_IDS_JSON"
+          --output "$evidence_json"
+          --manifest "$manifest"
+        )
+        if [[ -n "$RH_OBSERVED_AT" ]]; then
+          create_args+=(--observed-at "$RH_OBSERVED_AT")
+        fi
+        create_result="$(run_producer "${create_args[@]}")"
+
+        run_producer validate \
+          --input "$evidence_json" \
+          --manifest "$manifest" \
+          --expected-repository "$GITHUB_REPOSITORY" \
+          --expected-unit-id "$RH_UNIT_ID" \
+          --expected-subject-sha "$GITHUB_SHA" \
+          --expected-workflow-ref "$GITHUB_WORKFLOW_REF" \
+          --expected-workflow-sha "$GITHUB_WORKFLOW_SHA" \
+          --expected-run-id "$GITHUB_RUN_ID" \
+          --expected-run-attempt "$GITHUB_RUN_ATTEMPT" >/dev/null
+
+        RH_CREATE_RESULT="$create_result" python3 -I - "$GITHUB_OUTPUT" <<'PY'
+        import json
+        import os
+        import sys
+
+        result = json.loads(os.environ["RH_CREATE_RESULT"])
+        output = sys.argv[1]
+        values = {
+            "statement-id": result["statement_id"],
+            "evidence-json": result["evidence_path"],
+            "sha256-manifest": result["manifest_path"],
+            "evidence-sha256": result["sha256"],
+        }
+        if any("\n" in value or "\r" in value for value in values.values()):
+            raise SystemExit("producer output contained a line break")
+        with open(output, "a", encoding="utf-8") as handle:
+            for key, value in values.items():
+                handle.write(f"{key}={value}\n")
+        PY
+
+    - name: Upload evidence package
+      if: ${{ inputs.upload-artifact == 'true' }}
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: repository-health-evidence--${{ inputs.unit-id }}
+        path: |
+          ${{ steps.produce.outputs.evidence-json }}
+          ${{ steps.produce.outputs.sha256-manifest }}
+        if-no-files-found: error
+        retention-days: ${{ inputs.retention-days }}

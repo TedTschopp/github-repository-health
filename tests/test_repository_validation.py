@@ -24,8 +24,15 @@ class RepositoryValidationWorkflowTests(unittest.TestCase):
         permissions = text.split("permissions:\n", 1)[1].split("\n\n", 1)[0]
         self.assertEqual(permissions.strip(), "contents: read")
         uses = re.findall(r"(?m)^\s+uses:\s+([^\s#]+)", text)
-        self.assertGreaterEqual(len(uses), 2)
-        for reference in uses:
+        self.assertGreaterEqual(len(uses), 3)
+        local_references = [reference for reference in uses if reference.startswith("./")]
+        external_references = [reference for reference in uses if not reference.startswith("./")]
+        self.assertEqual(
+            local_references,
+            ["./.github/actions/repository-health-evidence"],
+            "Only the repository's controlled evidence-packaging action may be invoked locally.",
+        )
+        for reference in external_references:
             self.assertRegex(reference, r"^[^@\s]+@[0-9a-f]{40}$")
 
     def test_validation_workflow_exercises_tests_whitespace_and_reports(self) -> None:

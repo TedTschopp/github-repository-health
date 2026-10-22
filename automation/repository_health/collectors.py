@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+from pathlib import PurePosixPath
 import re
 import subprocess
 from typing import Any, Callable
@@ -57,19 +58,107 @@ SUCCESS_CONCLUSIONS = {"success"}
 FAILURE_CONCLUSIONS = {"failure", "cancelled", "timed_out", "action_required", "startup_failure", "stale"}
 
 
+def _git_environment() -> dict[str, str]:
+    # Do not inherit a consumer-controlled executable search path or Git config
+    # injection variables. Hosted Ubuntu runners provide Git in /usr/bin; the
+    # platform default path also keeps this safe for supported local diagnostics.
+    return {
+        "PATH": os.defpath,
+        "LC_ALL": "C",
+        "GIT_OPTIONAL_LOCKS": "0",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_PAGER": "cat",
+        "PAGER": "cat",
+    }
+
+
 def _git(repository: Path, *args: str) -> tuple[bool, str]:
     try:
         result = subprocess.run(
-            ["git", "-C", str(repository), *args],
+            [
+                "git",
+                "-c",
+                "core.hooksPath=/dev/null",
+                "-c",
+                "core.fsmonitor=false",
+                "-c",
+                "pager.branch=false",
+                "-c",
+                "pager.log=false",
+                "-C",
+                str(repository),
+                *args,
+            ],
             check=False,
             capture_output=True,
             text=True,
             timeout=15,
-            env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
+            env=_git_environment(),
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         return False, str(error)
     return result.returncode == 0, (result.stdout if result.returncode == 0 else result.stderr).strip()
+
+
+def read_git_bytes(
+    repository: str | Path,
+    revision: str,
+    relative_path: str,
+    *,
+    maximum_bytes: int = 1024 * 1024,
+) -> tuple[bool, bytes | str]:
+    """Read one bounded exact-revision blob without checkout or hooks."""
+
+    path = PurePosixPath(relative_path)
+    if (
+        re.fullmatch(r"[0-9a-f]{40}", revision) is None
+        or path.is_absolute()
+        or not path.parts
+        or ".." in path.parts
+        or "\x00" in relative_path
+    ):
+        return False, "unsafe revision or Git blob path"
+    if isinstance(maximum_bytes, bool) or maximum_bytes < 1:
+        return False, "invalid Git blob byte limit"
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "-c",
+                "core.hooksPath=/dev/null",
+                "-c",
+                "core.fsmonitor=false",
+                "-C",
+                str(Path(repository).resolve()),
+                "show",
+                f"{revision}:{path.as_posix()}",
+            ],
+            check=False,
+            capture_output=True,
+            timeout=15,
+            env=_git_environment(),
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return False, str(error)
+    if result.returncode != 0:
+        return False, result.stderr.decode("utf-8", errors="replace").strip()
+    if len(result.stdout) > maximum_bytes:
+        return False, f"Git blob exceeds {maximum_bytes} bytes"
+    return True, result.stdout
+
+
+def read_git_text(repository: str | Path, revision: str, relative_path: str) -> tuple[bool, str]:
+    """Read one exact-revision UTF-8 text blob without checkout or hooks."""
+
+    ok, value = read_git_bytes(repository, revision, relative_path)
+    if not ok:
+        return False, str(value)
+    try:
+        return True, bytes(value).decode("utf-8")
+    except UnicodeDecodeError as error:
+        return False, f"Git blob is not UTF-8: {error}"
 
 
 def _exists_any(repository: Path, names: set[str]) -> list[str]:

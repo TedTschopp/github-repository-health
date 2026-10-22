@@ -110,6 +110,40 @@ def assessment_fixture() -> dict:
             "methodology_assurance": "E2",
             "contradictions": [],
         },
+        "measurements": [
+            {
+                "schema_version": "RH-METRIC-RESULT-1.0",
+                "metric_version": "RH-METRICS-0.1",
+                "metric_id": "M-SPI-01",
+                "unit_id": None,
+                "state": "measured",
+                "band": "Pass",
+                "value": 100.0,
+                "unit": "percent",
+                "sample_class": "Standard",
+                "coverage": {"complete": True, "population_complete": True},
+                "assurance": "E3",
+                "evidence_ids": ["E-GH-CHECK-RUNS"],
+                "limitations": [],
+                "conflicts": [],
+            },
+            {
+                "schema_version": "RH-METRIC-RESULT-1.0",
+                "metric_version": "RH-METRICS-0.1",
+                "metric_id": "M-SPI-01T",
+                "unit_id": None,
+                "state": "unknown",
+                "band": None,
+                "value": None,
+                "unit": None,
+                "sample_class": "Unknown",
+                "coverage": {"complete": False, "population_complete": False},
+                "assurance": "E0",
+                "evidence_ids": ["E-GH-ACTIONS-W90"],
+                "limitations": ["The 90-day workflow population is incomplete."],
+                "conflicts": [],
+            },
+        ],
         "controls": controls,
         "dimensions": dimensions,
         "gates": {
@@ -274,6 +308,9 @@ class ReportingTests(unittest.TestCase):
         )
         self.assertIn("Next 7 actions, in order", leadership)
         self.assertIn("all 35", detailed.lower())
+        self.assertIn("## Measurement results", detailed)
+        self.assertIn("M-SPI-01T", detailed)
+        self.assertIn("90-day workflow population is incomplete", detailed)
 
     def test_write_reports_uses_stable_names_and_compact_json_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

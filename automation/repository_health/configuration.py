@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import date
+import hashlib
 from pathlib import Path
 import tomllib
 from typing import Any
@@ -319,15 +320,22 @@ def _validate(config: dict[str, Any]) -> None:
             raise ValueError("DORA period_end must not precede period_start")
 
 
+def load_config_bytes(data: bytes, *, source: str) -> dict[str, Any]:
+    """Load and validate config bytes with a stable source identity."""
+
+    supplied = tomllib.loads(data.decode("utf-8"))
+    config = _merge(DEFAULT_CONFIG, supplied)
+    _validate(config)
+    config["_config_path"] = source
+    config["_config_sha256"] = hashlib.sha256(data).hexdigest()
+    return config
+
+
 def load_config(path: str | Path | None = None) -> dict[str, Any]:
     """Load the conservative defaults overlaid by a repository TOML file."""
 
     chosen = Path(path).resolve() if path else default_config_path().resolve()
-    supplied = tomllib.loads(chosen.read_text(encoding="utf-8"))
-    config = _merge(DEFAULT_CONFIG, supplied)
-    _validate(config)
-    config["_config_path"] = str(chosen)
-    return config
+    return load_config_bytes(chosen.read_bytes(), source=str(chosen))
 
 
 def tri_state(value: Any, auto_value: bool | None = None) -> bool | None:

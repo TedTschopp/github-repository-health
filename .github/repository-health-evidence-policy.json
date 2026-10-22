@@ -1,0 +1,25 @@
+{
+  "schema_version": "RH-EVIDENCE-POLICY-1.0",
+  "repository": "TedTschopp/github-repository-health",
+  "units": [
+    {
+      "unit_id": "github-repository-health",
+      "statements": [
+        {
+          "kind": "validation",
+          "categories": [
+            "repository-contract",
+            "test-suite",
+            "whitespace"
+          ],
+          "workflow_path": ".github/workflows/repository-validation.yml",
+          "subject_source": "assessed-main",
+          "events": [
+            "push"
+          ],
+          "selection": "latest-completed-exact-subject"
+        }
+      ]
+    }
+  ]
+}

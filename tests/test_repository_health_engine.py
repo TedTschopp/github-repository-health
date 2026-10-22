@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from urllib.error import HTTPError
@@ -52,6 +54,33 @@ def all_dimension_results() -> list[dict]:
         result("RRO-01", "RRO"),
         result("RLP-01", "RLP"),
     ]
+
+
+def metric_result(
+    metric_id: str,
+    *,
+    state: str = "measured",
+    band: str | None = "Pass",
+    assurance: str = "E3",
+    value: float | None = 100.0,
+    limitations: list[str] | None = None,
+) -> dict:
+    return {
+        "schema_version": "RH-METRIC-RESULT-1.0",
+        "metric_version": "RH-METRICS-0.1",
+        "metric_id": metric_id,
+        "repository": "example/repo",
+        "unit_id": None,
+        "main_sha": "a" * 40,
+        "state": state,
+        "band": band,
+        "value": value,
+        "unit": "percent" if value is not None else None,
+        "assurance": assurance,
+        "evidence_ids": [f"E-{metric_id}"],
+        "limitations": limitations or [],
+        "conflicts": [],
+    }
 
 
 class CatalogTests(unittest.TestCase):
@@ -199,6 +228,121 @@ class UnknownAndApiGapTests(unittest.TestCase):
         self.assertEqual("Unknown", observed["conformance"])
         self.assertEqual("E3", observed["assurance"])
 
+    def test_versioned_current_metric_can_pass_gate_while_trend_remains_unknown(self) -> None:
+        catalog = parse_catalog(CATALOG)
+        config = deepcopy(DEFAULT_CONFIG)
+        config["repository"].update(
+            {"type": "Deployable application", "owner": "team", "risk_tier": "Baseline"}
+        )
+        metrics = [
+            metric_result("M-SPI-01"),
+            metric_result(
+                "M-SPI-01T",
+                state="unknown",
+                band=None,
+                assurance="E0",
+                value=None,
+                limitations=["The 90-day Main-validity population is incomplete."],
+            ),
+        ]
+        controls = evaluate_controls(
+            catalog,
+            config,
+            {
+                "documents": {},
+                "workflows": [],
+                "dependency_files": [],
+                "lock_files": [],
+                "working_tree_clean": True,
+                "head_is_main": True,
+            },
+            {"data": {}},
+            metrics,
+        )
+        spi01 = next(item for item in controls if item["control_id"] == "SPI-01")
+        self.assertEqual("Unknown", spi01["conformance"])
+        self.assertEqual("Pass", spi01["gate_status"])
+        self.assertIn("90-day", spi01["rationale"])
+        self.assertEqual(2, len(spi01["measurement_results"]))
+
+    def test_missing_declared_metric_forces_control_unknown_without_hiding_current_gate(self) -> None:
+        catalog = parse_catalog(CATALOG)
+        config = deepcopy(DEFAULT_CONFIG)
+        config["repository"].update(
+            {"type": "Deployable application", "owner": "team", "risk_tier": "Baseline"}
+        )
+        controls = evaluate_controls(
+            catalog,
+            config,
+            {
+                "documents": {},
+                "workflows": [],
+                "dependency_files": [],
+                "lock_files": [],
+                "working_tree_clean": True,
+                "head_is_main": True,
+            },
+            {"data": {}},
+            [metric_result("M-SPI-01")],
+        )
+        spi01 = next(item for item in controls if item["control_id"] == "SPI-01")
+        self.assertEqual("Unknown", spi01["conformance"])
+        self.assertEqual("Pass", spi01["gate_status"])
+        self.assertEqual(
+            {"M-SPI-01", "M-SPI-01T"},
+            {item["metric_id"] for item in spi01["measurement_results"]},
+        )
+        missing = next(item for item in spi01["measurement_results"] if item["metric_id"] == "M-SPI-01T")
+        self.assertEqual("unknown", missing["state"])
+
+    def test_versioned_gate_metric_requires_e3_to_pass(self) -> None:
+        catalog = parse_catalog(CATALOG)
+        config = deepcopy(DEFAULT_CONFIG)
+        config["repository"].update(
+            {"type": "Deployable application", "owner": "team", "risk_tier": "Baseline"}
+        )
+        controls = evaluate_controls(
+            catalog,
+            config,
+            {
+                "documents": {},
+                "workflows": [],
+                "dependency_files": [],
+                "lock_files": [],
+                "working_tree_clean": True,
+                "head_is_main": True,
+            },
+            {"data": {}},
+            [metric_result("M-CGD-01", assurance="E2")],
+        )
+        cgd01 = next(item for item in controls if item["control_id"] == "CGD-01")
+        self.assertEqual("Partially met", cgd01["conformance"])
+        self.assertEqual("Unknown", cgd01["gate_status"])
+
+    def test_versioned_failed_metric_drives_control_and_gate_failure(self) -> None:
+        catalog = parse_catalog(CATALOG)
+        config = deepcopy(DEFAULT_CONFIG)
+        config["repository"].update(
+            {"type": "Deployable application", "owner": "team", "risk_tier": "Baseline"}
+        )
+        controls = evaluate_controls(
+            catalog,
+            config,
+            {
+                "documents": {},
+                "workflows": [],
+                "dependency_files": [],
+                "lock_files": [],
+                "working_tree_clean": True,
+                "head_is_main": True,
+            },
+            {"data": {}},
+            [metric_result("M-CGD-02", band="Fail", value=0.0)],
+        )
+        cgd02 = next(item for item in controls if item["control_id"] == "CGD-02")
+        self.assertEqual("Unmet", cgd02["conformance"])
+        self.assertEqual("Fail", cgd02["gate_status"])
+
     def test_http_403_becomes_explicit_evidence_gap(self) -> None:
         def forbidden(request, timeout=0):
             raise HTTPError(request.full_url, 403, "Forbidden", {}, None)
@@ -259,6 +403,90 @@ class UnknownAndApiGapTests(unittest.TestCase):
         local_docs = next(item for item in records if item["evidence_id"] == "E-LOCAL-DOCS")
         self.assertEqual("E1", local_docs["assurance"])
         self.assertIn("not proven", local_docs["notes"])
+
+    def test_github_configuration_and_event_evidence_use_distinct_assurance(self) -> None:
+        config = deepcopy(DEFAULT_CONFIG)
+        config["_config_path"] = str(ROOT / ".github" / "repository-health.toml")
+        local = {
+            "root": str(ROOT),
+            "is_git_repository": True,
+            "working_tree_clean": True,
+            "head_is_main": True,
+        }
+
+        def group(evidence_id: str, data: dict) -> dict:
+            return {
+                "evidence_id": evidence_id,
+                "source": "GitHub REST",
+                "observed_at": "2026-08-09T20:00:00+00:00",
+                "complete": True,
+                "population_complete": True,
+                "data": data,
+                "gaps": [],
+                "request": {"endpoints": []},
+            }
+
+        bundle = {
+            "observed_at": "2026-08-09T20:00:00+00:00",
+            "observations": {
+                "repository_identity": group("E-GH-IDENTITY", {"default_branch": "main"}),
+                "rules": group("E-GH-RULES", {"rulesets": [{"id": 1}]}),
+                "check_runs": group("E-GH-CHECKS", {"check_runs": [{"id": 1}]}),
+            },
+        }
+        records = _evidence_records(
+            config,
+            local,
+            {"data": {}},
+            "2026-08-09T20:00:00+00:00",
+            observation_bundle=bundle,
+        )
+        by_id = {item["evidence_id"]: item for item in records}
+        self.assertEqual("E2", by_id["E-GH-IDENTITY"]["assurance"])
+        self.assertEqual("E2", by_id["E-GH-RULES"]["assurance"])
+        self.assertEqual("E3", by_id["E-GH-CHECKS"]["assurance"])
+
+    def test_bounded_history_window_does_not_claim_full_chain_validation(self) -> None:
+        config = deepcopy(DEFAULT_CONFIG)
+        config["_config_path"] = str(ROOT / ".github" / "repository-health.toml")
+        local = {
+            "root": str(ROOT),
+            "is_git_repository": True,
+            "working_tree_clean": True,
+            "head_is_main": True,
+        }
+        durable_history = {
+            "evidence_id": "E-GH-DURABLE-HISTORY",
+            "state": "observed",
+            "complete": True,
+            "branch": "repository-health-evidence",
+            "observed_at": "2026-08-09T20:00:00+00:00",
+            "validation_scope": "bounded_newest_segment",
+            "segment_complete": True,
+            "window_complete": True,
+            "full_chain_complete": False,
+            "opaque_predecessor_sha256": "f" * 64,
+            "snapshots": [
+                {"generated_at": "2025-08-09T20:00:00+00:00"},
+                {"generated_at": "2026-08-09T20:00:00+00:00"},
+            ],
+            "gaps": [],
+        }
+
+        records = _evidence_records(
+            config,
+            local,
+            {"data": {}},
+            "2026-08-09T20:00:00+00:00",
+            durable_history=durable_history,
+        )
+        history = next(
+            item for item in records if item["evidence_id"] == "E-GH-DURABLE-HISTORY"
+        )
+
+        self.assertIn("bounded newest segment", history["population_coverage"])
+        self.assertIn("opaque anchor", history["population_coverage"])
+        self.assertNotIn("from genesis", history["population_coverage"])
 
     def test_control_override_requires_evidence_reference(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -368,6 +596,78 @@ class UnknownAndApiGapTests(unittest.TestCase):
             config_path.write_text('[standard]\nversion="9.9"\n', encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "does not match catalog"):
                 assess_repository(repository=directory, catalog_path=CATALOG, config_path=config_path, github_token="")
+
+    def test_assessment_emits_versioned_repository_and_unit_metrics(self) -> None:
+        assessment = assess_repository(
+            repository=ROOT,
+            catalog_path=CATALOG,
+            config_path=ROOT / ".github" / "repository-health.toml",
+            github_token="",
+            now=None,
+        )
+        repository_metrics = [
+            item for item in assessment["measurements"] if item["unit_id"] is None
+        ]
+        unit_metrics = [
+            item
+            for item in assessment["measurements"]
+            if item["unit_id"] == "github-repository-health"
+        ]
+        self.assertEqual(14, len(repository_metrics))
+        self.assertEqual(14, len(unit_metrics))
+        self.assertTrue(
+            all(item["schema_version"] == "RH-METRIC-RESULT-1.0" for item in assessment["measurements"])
+        )
+        self.assertEqual("0.2.0", assessment["automation"]["engine_version"])
+        self.assertGreater(
+            len(assessment["facts"]["local"]["workflow_dependencies"]["observations"]),
+            0,
+        )
+
+    def test_dirty_risk_tier_and_control_override_cannot_change_exact_main_score(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "-C", str(root), "init", "-b", "main"], check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.name", "Health Test"], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.email", "health@example.invalid"], check=True)
+            config_path = root / ".github" / "repository-health.toml"
+            config_path.parent.mkdir(parents=True)
+            committed_config = (ROOT / ".github" / "repository-health.toml").read_bytes()
+            config_path.write_bytes(committed_config)
+            (root / "README.md").write_text("fixture\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-m", "fixture"], check=True, capture_output=True)
+
+            dirty = committed_config.decode("utf-8").replace(
+                'risk_tier = "Baseline"',
+                'risk_tier = "Critical"',
+                1,
+            )
+            dirty += (
+                '\n[controls."SPI-02"]\n'
+                'conformance = "N/A"\n'
+                'assurance = "E2"\n'
+                'rationale = "Dirty override must not be used."\n'
+                'evidence_ids = ["E-DIRTY"]\n'
+                'n_a_approved_by = "Uncommitted"\n'
+                'n_a_approved_at = "2026-08-09"\n'
+                'n_a_review_date = "2026-11-07"\n'
+            )
+            config_path.write_text(dirty, encoding="utf-8")
+
+            assessment = assess_repository(
+                repository=root,
+                catalog_path=CATALOG,
+                config_path=config_path,
+                github_token="",
+            )
+
+            self.assertEqual("Baseline", assessment["classification"]["risk_tier"])
+            self.assertFalse(any(item.get("evidence_ids") == ["E-DIRTY"] for item in assessment["controls"]))
+            self.assertEqual(
+                hashlib.sha256(committed_config).hexdigest(),
+                assessment["automation"]["config_sha256"],
+            )
 
     def test_available_dora_requires_all_five_metrics_and_context(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

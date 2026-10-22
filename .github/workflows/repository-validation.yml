@@ -33,15 +33,35 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Bind evidence to the exact source tree
+        id: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest="$(git ls-tree -r --full-tree "${GITHUB_SHA:?}" | sha256sum | cut -d ' ' -f 1)"
+          if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Unable to calculate the exact source-tree digest" >&2
+            exit 2
+          fi
+          echo "sha256=$digest" >> "$GITHUB_OUTPUT"
+
       - name: Run repository validation suite
+        id: tests
+        continue-on-error: true
         env:
           PYTHONDONTWRITEBYTECODE: '1'
         run: python3 -m unittest discover -s tests -v
 
       - name: Check patch whitespace
+        id: whitespace
+        if: ${{ always() }}
+        continue-on-error: true
         run: git diff --check HEAD
 
       - name: Exercise assessment and report contracts
+        id: contract
+        if: ${{ always() }}
+        continue-on-error: true
         env:
           PYTHONDONTWRITEBYTECODE: '1'
         run: |
@@ -61,3 +81,48 @@ jobs:
           test -s "$report_directory/health-assessment.md"
           test -s "$report_directory/leadership-summary.md"
           test -s "$report_directory/leadership-summary.json"
+
+      - name: Classify the validation outcome
+        id: validation
+        if: ${{ always() }}
+        shell: bash
+        env:
+          TEST_OUTCOME: ${{ steps.tests.outcome }}
+          WHITESPACE_OUTCOME: ${{ steps.whitespace.outcome }}
+          CONTRACT_OUTCOME: ${{ steps.contract.outcome }}
+        run: |
+          set -euo pipefail
+          result=unknown
+          if [[ "$TEST_OUTCOME" == success && "$WHITESPACE_OUTCOME" == success && "$CONTRACT_OUTCOME" == success ]]; then
+            result=success
+          elif [[ "$TEST_OUTCOME" == failure || "$WHITESPACE_OUTCOME" == failure || "$CONTRACT_OUTCOME" == failure ]]; then
+            result=failure
+          fi
+          echo "result=$result" >> "$GITHUB_OUTPUT"
+
+      - name: Package exact-run validation evidence
+        if: ${{ always() }}
+        uses: ./.github/actions/repository-health-evidence
+        with:
+          unit-id: github-repository-health
+          kind: validation
+          result: ${{ steps.validation.outputs.result || 'unknown' }}
+          categories-json: '["repository-contract","test-suite","whitespace"]'
+          subject-digests-json: >-
+            [{"algorithm":"sha256","name":"git-ls-tree","value":"${{ steps.subject.outputs.sha256 }}"}]
+          artifact-digests-json: '[]'
+          source-evidence-ids-json: '["github-actions-run:${{ github.run_id }}:${{ github.run_attempt }}"]'
+          output-directory: .repository-health-evidence/github-repository-health
+          upload-artifact: 'true'
+          retention-days: '90'
+
+      - name: Restore the validation result
+        if: ${{ always() }}
+        shell: bash
+        env:
+          VALIDATION_RESULT: ${{ steps.validation.outputs.result || 'unknown' }}
+        run: |
+          if [[ "$VALIDATION_RESULT" != success ]]; then
+            echo "Repository validation result: $VALIDATION_RESULT" >&2
+            exit 1
+          fi

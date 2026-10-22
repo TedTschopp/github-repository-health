@@ -1253,6 +1253,57 @@ def render_health_assessment(
         ]
     )
 
+    measurements = [
+        _mapping(item)
+        for item in _sequence(_first(assessment, "measurements", default=[]))
+    ]
+    lines.extend(
+        [
+            "",
+            "## Measurement results",
+            "",
+            "These versioned measurements are the observable basis for automated control ratings. "
+            "Unknown, partial, stale, or conflicting populations remain visible and cannot count as passing.",
+            "",
+            "| Measure | Scope | State | Band | Value | Assurance | Sample | Coverage | Evidence | Limitation |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    if measurements:
+        for measurement in measurements:
+            value = _first(measurement, "value", default=None)
+            unit = _first(measurement, "unit", default=None)
+            rendered_value = "—" if value is None else f"{_text(value)}{f' {_text(unit, default='')}' if unit else ''}"
+            coverage = _mapping(_first(measurement, "coverage", default={}))
+            coverage_text = _first(
+                coverage,
+                "population_coverage",
+                "coverage",
+                default=(
+                    "Complete" if coverage.get("complete") is True and coverage.get("population_complete") is True
+                    else "Incomplete"
+                ),
+            )
+            limitations_text = _plain_list(_first(measurement, "conflicts", default=[]))
+            limitations_text.extend(
+                item
+                for item in _plain_list(_first(measurement, "limitations", default=[]))
+                if item not in limitations_text
+            )
+            lines.append(
+                f"| {_md(_first(measurement, 'metric_id', default='Not supplied'))} | "
+                f"{_md(_first(measurement, 'unit_id', default='Repository'))} | "
+                f"{_md(_first(measurement, 'state', default='Unknown'))} | "
+                f"{_md(_first(measurement, 'band', default='—'))} | {_md(rendered_value)} | "
+                f"{_md(_first(measurement, 'assurance', default='E0'))} | "
+                f"{_md(_first(measurement, 'sample_class', default='Unknown'))} | "
+                f"{_md(coverage_text)} | "
+                f"{_md(_first(measurement, 'evidence_ids', default='None supplied'))} | "
+                f"{_md(limitations_text or 'None supplied')} |"
+            )
+    else:
+        lines.append("| None supplied | Repository | Unknown | — | — | E0 | Unknown | Incomplete | None supplied | Assessment payload contained no versioned measurements |")
+
     lines.extend(
         [
             "",
